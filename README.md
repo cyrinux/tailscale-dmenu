@@ -1,6 +1,6 @@
 # Tailscale Mullvad dmenu Selector
 
-![Logo](https://github.com/user-attachments/assets/8f14ad69-2a44-40a4-8a8e-359f0ec5617f)
+![Logo](https://github.com/user-attachments/assets/d07a6fb4-7558-4cc8-b7cd-9bb1321265c7)
 
 
 A simple dmenu-based selector to manage Tailscale exit nodes and custom actions. This tool allows you to quickly enable or disable Tailscale, set Tailscale exit nodes, and execute custom actions via a dmenu interface.
