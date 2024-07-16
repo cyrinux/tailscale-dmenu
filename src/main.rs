@@ -8,18 +8,20 @@ use dirs::config_dir;
 use regex::Regex;
 use serde::Deserialize;
 
+/// Represents an action that can be taken, including the display name and the command to execute.
 #[derive(Deserialize)]
 struct Action {
     display: String,
-    value: String,
     cmd: String,
 }
 
+/// Represents the configuration containing a list of actions.
 #[derive(Deserialize)]
 struct Config {
     actions: Vec<Action>,
 }
 
+/// Retrieves the flag emoji for a given country.
 fn get_flag(country: &str) -> &'static str {
     let country_flags: HashMap<&str, &str> = [
         ("Albania", "🇦🇱"), ("Australia", "🇦🇺"), ("Austria", "🇦🇹"),
@@ -41,30 +43,34 @@ fn get_flag(country: &str) -> &'static str {
     *country_flags.get(country).unwrap_or(&"❓")
 }
 
+/// Returns the default configuration as a string.
 fn get_default_config() -> &'static str {
     r#"
 [[actions]]
-display = "❌ - Disable mullvad"
-value = "disable_mullvad"
-cmd = "tailscale set --exit-node= --exit-node-allow-lan-access=false"
+display = "❌ - Disable exit-node"
+cmd = "tailscale set --exit-node="
 
 [[actions]]
 display = "❌ - Disable tailscale"
-value = "disable_tailscale"
 cmd = "tailscale down"
 
 [[actions]]
 display = "✅ - Enable tailscale"
-value = "enable_tailscale"
 cmd = "tailscale up"
+
+[[actions]]
+display = "Connect to RaspberryPi"
+cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
 "#
 }
 
+/// Returns the path to the configuration file.
 fn get_config_path() -> PathBuf {
     let config_dir = config_dir().expect("Failed to find config directory");
     config_dir.join("tailscale-dmenu").join("config.toml")
 }
 
+/// Creates the default configuration file if it doesn't already exist.
 fn create_default_config_if_missing() {
     let config_path = get_config_path();
 
@@ -77,6 +83,7 @@ fn create_default_config_if_missing() {
     }
 }
 
+/// Reads and parses the configured actions from the configuration file.
 fn get_configured_actions() -> Vec<Action> {
     let config_path = get_config_path();
     let config_content = fs::read_to_string(config_path).expect("Failed to read config file");
@@ -84,10 +91,11 @@ fn get_configured_actions() -> Vec<Action> {
     config.actions
 }
 
+/// Retrieves the list of actions to display in the dmenu.
 fn get_actions() -> Vec<String> {
     let mut actions = get_configured_actions()
         .into_iter()
-        .map(|action| format!("{} - {}", action.display, action.value))
+        .map(|action| action.display)
         .collect::<Vec<_>>();
 
     let output = Command::new("tailscale")
@@ -117,13 +125,34 @@ fn get_actions() -> Vec<String> {
     actions
 }
 
+/// Executes the command associated with the selected action.
 fn set_action(action: &str) {
     let regex = Regex::new(r" - ([\w_.-]+)$").unwrap();
     if let Some(caps) = regex.captures(action) {
-        let action_value = caps.get(1).map_or("", |m| m.as_str());
+        let node_name = caps.get(1).map_or("", |m| m.as_str());
 
+        // Handle exit node selection
+        let status = Command::new("tailscale")
+            .arg("set")
+            .arg("--exit-node")
+            .arg(node_name)
+            .arg("--exit-node-allow-lan-access=true")
+            .status();
+
+        match status {
+            Ok(status) => {
+                if !status.success() {
+                    eprintln!("Command executed with non-zero exit status: {}", status);
+                }
+            },
+            Err(err) => {
+                eprintln!("Failed to execute command: {:?}", err);
+            }
+        }
+    } else {
+        // Handle configured actions
         let configured_actions = get_configured_actions();
-        if let Some(action) = configured_actions.iter().find(|a| a.value == action_value) {
+        if let Some(action) = configured_actions.iter().find(|a| a.display == action) {
             let cmd = &action.cmd;
             let parts: Vec<&str> = cmd.split_whitespace().collect();
             let (cmd, args) = parts.split_first().expect("Failed to parse command");
@@ -133,26 +162,6 @@ fn set_action(action: &str) {
 
             let status = Command::new(cmd)
                 .args(args)
-                .status();
-
-            match status {
-                Ok(status) => {
-                    if !status.success() {
-                        eprintln!("Command executed with non-zero exit status: {}", status);
-                    }
-                },
-                Err(err) => {
-                    eprintln!("Failed to execute command: {:?}", err);
-                }
-            }
-        } else {
-            // Handle exit node selection
-            let node_name = action_value;
-            let status = Command::new("tailscale")
-                .arg("set")
-                .arg("--exit-node")
-                .arg(node_name)
-                .arg("--exit-node-allow-lan-access=true")
                 .status();
 
             match status {
