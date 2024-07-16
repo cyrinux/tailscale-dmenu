@@ -18,7 +18,7 @@ A simple dmenu-based selector to manage Tailscale exit nodes and custom actions.
 1. Ensure you have Rust installed. If not, you can install it from [rust-lang.org](https://www.rust-lang.org/).
 2. Clone this repository:
    ```sh
-   git clone https://github.com/yourusername/tailscale-dmenu-selector.git
+   git clone https://github.com/cyrinux/tailscale-dmenu.git
    cd tailscale-dmenu-selector
    ```
 3. Build the project:
@@ -27,7 +27,7 @@ A simple dmenu-based selector to manage Tailscale exit nodes and custom actions.
    ```
 4. Move the binary to a directory in your PATH:
    ```sh
-   cp target/release/tailscale-dmenu-selector /usr/local/bin/
+   cp target/release/tailscale-dmenu /usr/local/bin/
    ```
 
 ## Configuration
@@ -61,7 +61,7 @@ You can add more actions by editing this file.
 Run the following command to open the dmenu selector:
 
 ```sh
-tailscale-dmenu-selector
+tailscale-dmenu
 ```
 
 Select an action from the menu. The corresponding command will be executed.
@@ -78,4 +78,4 @@ Contributions are welcome! Please open an issue or submit a pull request on GitH
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the ISC License. See the [LICENSE](LICENSE.md) file for details.
