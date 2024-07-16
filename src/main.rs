@@ -59,7 +59,7 @@ display = "✅ - Enable tailscale"
 cmd = "tailscale up"
 
 [[actions]]
-display = "Connect to RaspberryPi"
+display = "🌿 - Connect to RaspberryPi"
 cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
 "#
 }
@@ -183,11 +183,15 @@ fn main() {
 
     let actions = get_actions();
     let action = {
-        let mut child = Command::new("dmenu")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to execute dmenu");
+    let mut child = Command::new("dmenu")
+        .arg("-f")
+        .arg("--no-multi")
+        .arg("-p")
+        .arg("Select action:")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to execute dmenu");
 
         {
             let stdin = child.stdin.as_mut().expect("Failed to open stdin");
