@@ -7,10 +7,16 @@ use dirs::config_dir;
 use reqwest::blocking::get;
 use serde::Deserialize;
 
+#[cfg(feature = "iwd")]
+mod iwd;
 mod mullvad;
+#[cfg(feature = "networkmanager")]
 mod networkmanager;
 
+#[cfg(feature = "iwd")]
+use iwd::{connect_to_iwd_wifi, get_iwd_networks};
 use mullvad::{get_mullvad_actions, set_mullvad_exit_node};
+#[cfg(feature = "networkmanager")]
 use networkmanager::{connect_to_wifi, get_wifi_networks};
 
 /// Represents an action that can be taken, including the display name and the command to execute.
@@ -31,7 +37,7 @@ fn get_default_config() -> &'static str {
     r#"
 [[actions]]
 display = "❌ - Disable mullvad"
-cmd = "tailscale set --exit-node= --exit-node-allow-lan-access=false"
+cmd = "tailscale set --exit-node="
 
 [[actions]]
 display = "❌ - Disable tailscale"
@@ -43,7 +49,19 @@ cmd = "tailscale up"
 
 [[actions]]
 display = "🌿 RaspberryPi"
-cmd = "echo 'RaspberryPi action selected'"
+cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
+
+[[actions]]
+display = "wifi scan"
+cmd = "nmcli dev wifi list --rescan yes"
+
+[[actions]]
+display = "🛡️ Shields up"
+cmd = "tailscale set --shields-up=true"
+
+[[actions]]
+display = "🛡️ Shields down"
+cmd = "tailscale set --shields-up=false"
 "#
 }
 
@@ -83,7 +101,11 @@ fn get_actions() -> Vec<String> {
         .collect::<Vec<_>>();
 
     actions.extend(get_mullvad_actions());
+
+    #[cfg(feature = "networkmanager")]
     actions.extend(get_wifi_networks());
+    #[cfg(feature = "iwd")]
+    actions.extend(get_iwd_networks());
 
     actions
 }
@@ -104,29 +126,42 @@ fn set_action(action: &str) {
             .arg(notification)
             .status()
             .expect("Failed to send notification");
-    } else if connect_to_wifi(action) {
-        // Wi-Fi connection notification is handled inside the function
     } else {
-        // Handle configured actions
-        let config = get_config();
-        if let Some(action) = config
-            .actions
-            .iter()
-            .find(|a| format!("action - {}", a.display) == action)
-        {
-            eprintln!("Executing command: {}", action.cmd);
+        let connected = {
+            #[cfg(feature = "networkmanager")]
+            {
+                connect_to_wifi(action)
+            }
+            #[cfg(feature = "iwd")]
+            {
+                connect_to_iwd_wifi(action)
+            }
+        };
 
-            let status = Command::new("sh").arg("-c").arg(&action.cmd).status();
+        if connected {
+            return;
+        }
+    }
 
-            match status {
-                Ok(status) => {
-                    if !status.success() {
-                        eprintln!("Command executed with non-zero exit status: {}", status);
-                    }
+    // Handle configured actions
+    let config = get_config();
+    if let Some(action) = config
+        .actions
+        .iter()
+        .find(|a| format!("action - {}", a.display) == action)
+    {
+        eprintln!("Executing command: {}", action.cmd);
+
+        let status = Command::new("sh").arg("-c").arg(&action.cmd).status();
+
+        match status {
+            Ok(status) => {
+                if !status.success() {
+                    eprintln!("Command executed with non-zero exit status: {}", status);
                 }
-                Err(err) => {
-                    eprintln!("Failed to execute command: {:?}", err);
-                }
+            }
+            Err(err) => {
+                eprintln!("Failed to execute command: {:?}", err);
             }
         }
     }
@@ -158,8 +193,12 @@ fn main() {
         set_action(&action);
     }
 
-    Command::new("tailscale")
-        .arg("status")
-        .status()
-        .expect("Failed to get tailscale status");
+    // Display Tailscale status only if in debug mode
+    #[cfg(debug_assertions)]
+    {
+        Command::new("tailscale")
+            .arg("status")
+            .status()
+            .expect("Failed to get tailscale status");
+    }
 }
