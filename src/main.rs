@@ -37,7 +37,7 @@ fn get_default_config() -> &'static str {
     r#"
 [[actions]]
 display = "❌ - Disable mullvad"
-cmd = "tailscale set --exit-node="
+cmd = "tailscale set --exit-node= --exit-node-allow-lan-access=false"
 
 [[actions]]
 display = "❌ - Disable tailscale"
@@ -50,18 +50,6 @@ cmd = "tailscale up"
 [[actions]]
 display = "🌿 RaspberryPi"
 cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
-
-[[actions]]
-display = "wifi scan"
-cmd = "nmcli dev wifi list --rescan yes"
-
-[[actions]]
-display = "🛡️ Shields up"
-cmd = "tailscale set --shields-up=true"
-
-[[actions]]
-display = "🛡️ Shields down"
-cmd = "tailscale set --shields-up=false"
 "#
 }
 
@@ -111,7 +99,7 @@ fn get_actions() -> Vec<String> {
 }
 
 /// Executes the command associated with the selected action.
-fn set_action(action: &str) {
+fn set_action(action: &str) -> bool {
     if set_mullvad_exit_node(action) {
         // Post-action for Mullvad
         let response = get("https://am.i.mullvad.net/connected")
@@ -126,6 +114,8 @@ fn set_action(action: &str) {
             .arg(notification)
             .status()
             .expect("Failed to send notification");
+
+        return true;
     } else {
         let connected = {
             #[cfg(feature = "networkmanager")]
@@ -139,7 +129,7 @@ fn set_action(action: &str) {
         };
 
         if connected {
-            return;
+            return true;
         }
     }
 
@@ -164,7 +154,11 @@ fn set_action(action: &str) {
                 eprintln!("Failed to execute command: {:?}", err);
             }
         }
+
+        return true;
     }
+
+    false
 }
 
 fn main() {

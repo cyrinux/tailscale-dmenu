@@ -15,7 +15,10 @@ pub fn get_wifi_networks() -> Vec<String> {
 
     if output.status.success() {
         let reader = BufReader::new(output.stdout.as_slice());
-        let wifi_lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
+        let wifi_lines: Vec<String> = reader
+            .lines()
+            .map_while(Result::ok)
+            .collect();
 
         for line in wifi_lines {
             let parts: Vec<&str> = line.split(':').collect();
@@ -24,13 +27,8 @@ pub fn get_wifi_networks() -> Vec<String> {
                 let ssid = parts[1].trim();
                 let bars = parts[2].trim();
                 if !ssid.is_empty() {
-                    let display = format!(
-                        "wifi - {} {} - {}",
-                        if in_use == "*" { "🌐" } else { "📶" },
-                        ssid,
-                        bars
-                    );
-                    actions.push(display);
+                    let display = format!("wifi - {} {} - {}", if in_use == "*" { "🌐" } else { "📶" }, ssid, bars);
+                    actions.push(display```rust
                 }
             }
         }
@@ -63,7 +61,7 @@ pub fn connect_to_wifi(action: &str) -> bool {
 
                     true
                 }
-            }
+            },
             Err(err) => {
                 eprintln!("Failed to execute Wi-Fi connection command: {:?}", err);
                 false

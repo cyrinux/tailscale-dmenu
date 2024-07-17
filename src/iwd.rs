@@ -1,3 +1,4 @@
+use regex::Regex;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 
@@ -13,20 +14,29 @@ pub fn get_iwd_networks() -> Vec<String> {
 
     if output.status.success() {
         let reader = BufReader::new(output.stdout.as_slice());
-        let mut lines: Vec<String> = reader
+        let networks = reader
             .lines()
             .map_while(Result::ok)
-            .skip_while(|line| !line.contains("Available networks"))
-            .skip(1)
-            .take_while(|line| !line.contains("--------------------------------------------------------------------------------"))
-            .collect();
+            .skip_while(|network| !network.contains("Available networks"))
+            .skip(3);
 
-        for line in lines.iter_mut() {
+        // Regex to remove ANSI color codes
+        let ansi_escape = Regex::new(r"\x1B\[[0-?]*[ -/]*[@-~]").unwrap();
+
+        for network in networks {
+            let line = ansi_escape.replace_all(&network, "").to_string();
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 3 {
-                let ssid = parts[0].trim();
-                let bars = parts[2].trim();
-                let display = format!("wifi - {} {}", ssid, bars);
+                let connected = parts[0] == ">";
+                let ssid_start = if connected { 1 } else { 0 };
+                let ssid = parts[ssid_start..parts.len() - 2].join(" ");
+                let signal = parts[parts.len() - 1].trim();
+                let display = format!(
+                    "wifi - {} {} - {}",
+                    if connected { "🌐" } else { "📶" },
+                    ssid,
+                    signal
+                );
                 actions.push(display);
             }
         }
@@ -37,7 +47,7 @@ pub fn get_iwd_networks() -> Vec<String> {
 
 pub fn connect_to_iwd_wifi(action: &str) -> bool {
     if action.starts_with("wifi - ") {
-        let ssid = action.split_whitespace().nth(2).unwrap_or("");
+        let ssid = action.split_whitespace().nth(3).unwrap_or("");
         let status = Command::new("sh")
             .arg("-c")
             .arg(format!("iwctl station wlan0 connect '{}'", ssid))
