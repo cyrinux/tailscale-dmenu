@@ -18,7 +18,7 @@ A simple dmenu-based selector to manage Tailscale exit nodes and custom actions.
 2. Clone this repository:
    ```sh
    git clone https://github.com/cyrinux/tailscale-dmenu.git
-   cd tailscale-dmenu-selector
+   cd tailscale-dmenu
    ```
 3. Build the project:
    ```sh
