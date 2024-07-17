@@ -1,3 +1,4 @@
+use notify_rust::Notification;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -7,17 +8,15 @@ use dirs::config_dir;
 use reqwest::blocking::get;
 use serde::Deserialize;
 
-#[cfg(feature = "iwd")]
 mod iwd;
 mod mullvad;
-#[cfg(feature = "networkmanager")]
 mod networkmanager;
 
-#[cfg(feature = "iwd")]
 use iwd::{connect_to_iwd_wifi, get_iwd_networks};
 use mullvad::{get_mullvad_actions, set_mullvad_exit_node};
-#[cfg(feature = "networkmanager")]
-use networkmanager::{connect_to_wifi, get_wifi_networks};
+use networkmanager::{
+    connect_to_wifi as connect_to_nm_wifi, get_wifi_networks as get_nm_wifi_networks,
+};
 
 /// Represents an action that can be taken, including the display name and the command to execute.
 #[derive(Deserialize)]
@@ -37,7 +36,7 @@ fn get_default_config() -> &'static str {
     r#"
 [[actions]]
 display = "❌ - Disable mullvad"
-cmd = "tailscale set --exit-node= --exit-node-allow-lan-access=false"
+cmd = "tailscale set --exit-node="
 
 [[actions]]
 display = "❌ - Disable tailscale"
@@ -50,6 +49,14 @@ cmd = "tailscale up"
 [[actions]]
 display = "🌿 RaspberryPi"
 cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
+
+[[actions]]
+display = "🛡️ Shields up"
+cmd = "tailscale set --shields-up=true"
+
+[[actions]]
+display = "🛡️ Shields down"
+cmd = "tailscale set --shields-up=false"
 "#
 }
 
@@ -90,10 +97,11 @@ fn get_actions() -> Vec<String> {
 
     actions.extend(get_mullvad_actions());
 
-    #[cfg(feature = "networkmanager")]
-    actions.extend(get_wifi_networks());
-    #[cfg(feature = "iwd")]
-    actions.extend(get_iwd_networks());
+    if is_command_installed("nmcli") {
+        actions.extend(get_nm_wifi_networks());
+    } else if is_command_installed("iwctl") {
+        actions.extend(get_iwd_networks());
+    }
 
     actions
 }
@@ -116,21 +124,10 @@ fn set_action(action: &str) -> bool {
             .expect("Failed to send notification");
 
         return true;
-    } else {
-        let connected = {
-            #[cfg(feature = "networkmanager")]
-            {
-                connect_to_wifi(action)
-            }
-            #[cfg(feature = "iwd")]
-            {
-                connect_to_iwd_wifi(action)
-            }
-        };
-
-        if connected {
-            return true;
-        }
+    } else if is_command_installed("nmcli") {
+        return connect_to_nm_wifi(action);
+    } else if is_command_installed("iwctl") {
+        return connect_to_iwd_wifi(action);
     }
 
     // Handle configured actions
@@ -140,7 +137,10 @@ fn set_action(action: &str) -> bool {
         .iter()
         .find(|a| format!("action - {}", a.display) == action)
     {
-        eprintln!("Executing command: {}", action.cmd);
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("Executing command: {}", action.cmd);
+        }
 
         let status = Command::new("sh").arg("-c").arg(&action.cmd).status();
 
@@ -159,6 +159,16 @@ fn set_action(action: &str) -> bool {
     }
 
     false
+}
+
+/// Checks if a command is installed.
+fn is_command_installed(cmd: &str) -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {cmd} >/dev/null"))
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn main() {
@@ -195,4 +205,12 @@ fn main() {
             .status()
             .expect("Failed to get tailscale status");
     }
+}
+
+fn notify_connection(ssid: &str) {
+    Notification::new()
+        .summary("Wi-Fi")
+        .body(&format!("Connected to {}", ssid))
+        .show()
+        .expect("Failed to send notification");
 }
