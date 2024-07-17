@@ -16,3 +16,4 @@ dirs = "4.0"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.5"
 regex = "1"
+reqwest = { version = "*", features = ["blocking"] }

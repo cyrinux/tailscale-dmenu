@@ -1,12 +1,17 @@
-use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use dirs::config_dir;
-use regex::Regex;
+use reqwest::blocking::get;
 use serde::Deserialize;
+
+mod mullvad;
+mod networkmanager;
+
+use mullvad::{get_mullvad_actions, set_mullvad_exit_node};
+use networkmanager::{connect_to_wifi, get_wifi_networks};
 
 /// Represents an action that can be taken, including the display name and the command to execute.
 #[derive(Deserialize)]
@@ -15,40 +20,18 @@ struct Action {
     cmd: String,
 }
 
-/// Represents the configuration containing a list of actions.
+/// Represents the configuration, including a list of actions.
 #[derive(Deserialize)]
 struct Config {
     actions: Vec<Action>,
-}
-
-/// Retrieves the flag emoji for a given country.
-fn get_flag(country: &str) -> &'static str {
-    let country_flags: HashMap<&str, &str> = [
-        ("Albania", "🇦🇱"), ("Australia", "🇦🇺"), ("Austria", "🇦🇹"),
-        ("Belgium", "🇧🇪"), ("Brazil", "🇧🇷"), ("Bulgaria", "🇧🇬"),
-        ("Canada", "🇨🇦"), ("Chile", "🇨🇱"), ("Colombia", "🇨🇴"),
-        ("Croatia", "🇭🇷"), ("Czech Republic", "🇨🇿"), ("Denmark", "🇩🇰"),
-        ("Estonia", "🇪🇪"), ("Finland", "🇫🇮"), ("France", "🇫🇷"),
-        ("Germany", "🇩🇪"), ("Greece", "🇬🇷"), ("Hong Kong", "🇭🇰"),
-        ("Hungary", "🇭🇺"), ("Indonesia", "🇮🇩"), ("Ireland", "🇮🇪"),
-        ("Israel", "🇮🇱"), ("Italy", "🇮🇹"), ("Japan", "🇯🇵"),
-        ("Latvia", "🇱🇻"), ("Mexico", "🇲🇽"), ("Netherlands", "🇳🇱"),
-        ("New Zealand", "🇳🇿"), ("Norway", "🇳🇴"), ("Poland", "🇵🇱"),
-        ("Portugal", "🇵🇹"), ("Romania", "🇷🇴"), ("Serbia", "🇷🇸"),
-        ("Singapore", "🇸🇬"), ("Slovakia", "🇸🇰"), ("Slovenia", "🇸🇮"),
-        ("South Africa", "🇿🇦"), ("Spain", "🇪🇸"), ("Sweden", "🇸🇪"),
-        ("Switzerland", "🇨🇭"), ("Thailand", "🇹🇭"), ("Turkey", "🇹🇷"),
-        ("UK", "🇬🇧"), ("Ukraine", "🇺🇦"), ("USA", "🇺🇸")
-    ].iter().cloned().collect();
-    *country_flags.get(country).unwrap_or(&"❓")
 }
 
 /// Returns the default configuration as a string.
 fn get_default_config() -> &'static str {
     r#"
 [[actions]]
-display = "❌ - Disable exit-node"
-cmd = "tailscale set --exit-node="
+display = "❌ - Disable mullvad"
+cmd = "tailscale set --exit-node= --exit-node-allow-lan-access=false"
 
 [[actions]]
 display = "❌ - Disable tailscale"
@@ -59,8 +42,8 @@ display = "✅ - Enable tailscale"
 cmd = "tailscale up"
 
 [[actions]]
-display = "🌿 - Connect to RaspberryPi"
-cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
+display = "🌿 RaspberryPi"
+cmd = "echo 'RaspberryPi action selected'"
 "#
 }
 
@@ -84,92 +67,63 @@ fn create_default_config_if_missing() {
 }
 
 /// Reads and parses the configured actions from the configuration file.
-fn get_configured_actions() -> Vec<Action> {
+fn get_config() -> Config {
     let config_path = get_config_path();
     let config_content = fs::read_to_string(config_path).expect("Failed to read config file");
-    let config: Config = toml::from_str(&config_content).expect("Failed to parse config file");
-    config.actions
+    toml::from_str(&config_content).expect("Failed to parse config file")
 }
 
 /// Retrieves the list of actions to display in the dmenu.
 fn get_actions() -> Vec<String> {
-    let mut actions = get_configured_actions()
+    let config = get_config();
+    let mut actions = config
+        .actions
         .into_iter()
-        .map(|action| action.display)
+        .map(|action| format!("action - {}", action.display))
         .collect::<Vec<_>>();
 
-    let output = Command::new("tailscale")
-        .arg("exit-node")
-        .arg("list")
-        .output()
-        .expect("Failed to execute command");
-
-    if output.status.success() {
-        let reader = BufReader::new(output.stdout.as_slice());
-        let regex = Regex::new(r"\s{2,}").unwrap();
-        let mut lines: Vec<String> = reader.lines()
-            .filter_map(Result::ok)
-            .filter(|line| line.contains("mullvad.ts.net"))
-            .map(|line| {
-                let parts: Vec<&str> = regex.split(&line).collect();
-                let country = parts.get(2).unwrap_or(&"");
-                let node_name = parts.get(1).unwrap_or(&"");
-                format!("{} {} - {}", get_flag(country), country, node_name)
-            })
-            .collect();
-
-        lines.sort_by(|a, b| a.split_whitespace().next().cmp(&b.split_whitespace().next()));
-        actions.extend(lines);
-    }
+    actions.extend(get_mullvad_actions());
+    actions.extend(get_wifi_networks());
 
     actions
 }
 
 /// Executes the command associated with the selected action.
 fn set_action(action: &str) {
-    let regex = Regex::new(r" - ([\w_.-]+)$").unwrap();
-    if let Some(caps) = regex.captures(action) {
-        let node_name = caps.get(1).map_or("", |m| m.as_str());
+    if set_mullvad_exit_node(action) {
+        // Post-action for Mullvad
+        let response = get("https://am.i.mullvad.net/connected")
+            .expect("Failed to make request")
+            .text()
+            .expect("Failed to read response text");
 
-        // Handle exit node selection
-        let status = Command::new("tailscale")
-            .arg("set")
-            .arg("--exit-node")
-            .arg(node_name)
-            .arg("--exit-node-allow-lan-access=true")
-            .status();
+        let notification = format!("notify-send 'Connected Status' '{}'", response.trim());
 
-        match status {
-            Ok(status) => {
-                if !status.success() {
-                    eprintln!("Command executed with non-zero exit status: {}", status);
-                }
-            },
-            Err(err) => {
-                eprintln!("Failed to execute command: {:?}", err);
-            }
-        }
+        Command::new("sh")
+            .arg("-c")
+            .arg(notification)
+            .status()
+            .expect("Failed to send notification");
+    } else if connect_to_wifi(action) {
+        // Wi-Fi connection notification is handled inside the function
     } else {
         // Handle configured actions
-        let configured_actions = get_configured_actions();
-        if let Some(action) = configured_actions.iter().find(|a| a.display == action) {
-            let cmd = &action.cmd;
-            let parts: Vec<&str> = cmd.split_whitespace().collect();
-            let (cmd, args) = parts.split_first().expect("Failed to parse command");
+        let config = get_config();
+        if let Some(action) = config
+            .actions
+            .iter()
+            .find(|a| format!("action - {}", a.display) == action)
+        {
+            eprintln!("Executing command: {}", action.cmd);
 
-            // Debug log the command and its arguments
-            eprintln!("Executing command: {} {:?}", cmd, args);
-
-            let status = Command::new(cmd)
-                .args(args)
-                .status();
+            let status = Command::new("sh").arg("-c").arg(&action.cmd).status();
 
             match status {
                 Ok(status) => {
                     if !status.success() {
                         eprintln!("Command executed with non-zero exit status: {}", status);
                     }
-                },
+                }
                 Err(err) => {
                     eprintln!("Failed to execute command: {:?}", err);
                 }
@@ -183,22 +137,20 @@ fn main() {
 
     let actions = get_actions();
     let action = {
-    let mut child = Command::new("dmenu")
-        .arg("-f")
-        .arg("--no-multi")
-        .arg("-p")
-        .arg("Select action:")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed to execute dmenu");
+        let mut child = Command::new("dmenu")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to execute dmenu");
 
         {
             let stdin = child.stdin.as_mut().expect("Failed to open stdin");
             write!(stdin, "{}", actions.join("\n")).expect("Failed to write to stdin");
         }
 
-        let output = child.wait_with_output().expect("Failed to read dmenu output");
+        let output = child
+            .wait_with_output()
+            .expect("Failed to read dmenu output");
         String::from_utf8_lossy(&output.stdout).trim().to_string()
     };
 
