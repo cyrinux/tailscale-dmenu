@@ -81,7 +81,6 @@ fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
-/// Retrieves the list of actions to display in the dmenu.
 fn get_actions() -> Result<Vec<String>, Box<dyn Error>> {
     let config = get_config()?;
     let mut actions = config
@@ -103,8 +102,7 @@ fn get_actions() -> Result<Vec<String>, Box<dyn Error>> {
     Ok(actions)
 }
 
-fn set_action(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let config = get_config()?;
+fn handle_custom_action(action: &str, config: &Config) -> Result<bool, Box<dyn Error>> {
     if let Some(action_config) = config
         .actions
         .iter()
@@ -125,6 +123,16 @@ fn set_action(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
         #[cfg(debug_assertions)]
         eprintln!("Command executed with non-zero exit status: {}", status);
     }
+    Ok(false)
+}
+
+fn set_action(action: &str) -> Result<bool, Box<dyn Error>> {
+    let config = get_config()?;
+
+    if handle_custom_action(action, &config)? {
+        return Ok(true);
+    }
+
     if is_command_installed("nmcli") {
         connect_to_nm_wifi(action)?;
     } else if is_command_installed("iwctl") && !is_command_installed("nmcli") {
