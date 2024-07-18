@@ -3,17 +3,11 @@ use regex::Regex;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 
-pub fn get_iwd_networks() -> Vec<String> {
+pub fn get_iwd_networks() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut actions = Vec::new();
 
-    if let Some(networks) = fetch_iwd_networks() {
-        let mut has_connected = false;
-        for network in &networks {
-            if network.starts_with(">") {
-                has_connected = true;
-                break;
-            }
-        }
+    if let Some(networks) = fetch_iwd_networks()? {
+        let has_connected = networks.iter().any(|network| network.starts_with('>'));
 
         if !has_connected {
             // Rescan networks
@@ -21,29 +15,27 @@ pub fn get_iwd_networks() -> Vec<String> {
                 .arg("station")
                 .arg("wlan0")
                 .arg("scan")
-                .output()
-                .expect("Failed to execute rescan command");
+                .output()?;
 
             if rescan_output.status.success() {
-                if let Some(rescan_networks) = fetch_iwd_networks() {
-                    parse_iwd_networks(&mut actions, rescan_networks);
+                if let Some(rescan_networks) = fetch_iwd_networks()? {
+                    let _ = parse_iwd_networks(&mut actions, rescan_networks);
                 }
             }
         } else {
-            parse_iwd_networks(&mut actions, networks);
+            let _ = parse_iwd_networks(&mut actions, networks);
         }
     }
 
-    actions
+    Ok(actions)
 }
 
-fn fetch_iwd_networks() -> Option<Vec<String>> {
+fn fetch_iwd_networks() -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
     let output = Command::new("iwctl")
         .arg("station")
         .arg("wlan0")
         .arg("get-networks")
-        .output()
-        .expect("Failed to execute command");
+        .output()?;
 
     if output.status.success() {
         let reader = BufReader::new(output.stdout.as_slice());
@@ -53,15 +45,18 @@ fn fetch_iwd_networks() -> Option<Vec<String>> {
             .skip_while(|network| !network.contains("Available networks"))
             .skip(3)
             .collect();
-        Some(networks)
+        Ok(Some(networks))
     } else {
-        None
+        Ok(None)
     }
 }
 
-fn parse_iwd_networks(actions: &mut Vec<String>, networks: Vec<String>) {
+fn parse_iwd_networks(
+    actions: &mut Vec<String>,
+    networks: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Regex to remove ANSI color codes
-    let ansi_escape = Regex::new(r"\x1B\[[0-?]*[ -/]*[@-~]").unwrap();
+    let ansi_escape = Regex::new(r"\x1B\[[0-?]*[ -/]*[@-~]")?;
 
     for network in networks {
         let line = ansi_escape.replace_all(&network, "").to_string();
@@ -80,34 +75,28 @@ fn parse_iwd_networks(actions: &mut Vec<String>, networks: Vec<String>) {
             actions.push(display);
         }
     }
+
+    Ok(())
 }
 
-pub fn connect_to_iwd_wifi(action: &str) -> bool {
+pub fn connect_to_iwd_wifi(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
     println!("connect test iwd");
     if action.starts_with("wifi - ") {
         let ssid = action.split_whitespace().nth(3).unwrap_or("");
         let status = Command::new("sh")
             .arg("-c")
             .arg(format!("iwctl station wlan0 connect '{ssid}'"))
-            .status();
+            .status()?;
 
-        match status {
-            Ok(status) => {
-                if !status.success() {
-                    eprintln!("Failed to connect to Wi-Fi network: {ssid}");
-                    false
-                } else {
-                    notify_connection(ssid);
-
-                    true
-                }
-            }
-            Err(err) => {
-                eprintln!("Failed to execute Wi-Fi connection command: {err:?}");
-                false
-            }
+        if status.success() {
+            notify_connection(ssid)?;
+            Ok(true)
+        } else {
+            #[cfg(debug_assertions)]
+            eprintln!("Failed to connect to Wi-Fi network: {}", ssid);
+            Ok(false)
         }
     } else {
-        false
+        Ok(false)
     }
 }
