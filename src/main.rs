@@ -104,17 +104,6 @@ fn get_actions() -> Result<Vec<String>, Box<dyn Error>> {
 }
 
 fn set_action(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    if is_command_installed("nmcli") {
-        connect_to_nm_wifi(action)?;
-    } else if is_command_installed("iwctl") && !is_command_installed("nmcli") {
-        connect_to_iwd_wifi(action)?;
-    }
-
-    if is_command_installed("tailscale") {
-        set_mullvad_exit_node(action);
-        check_mullvad()?;
-    }
-
     let config = get_config()?;
     if let Some(action_config) = config
         .actions
@@ -135,6 +124,16 @@ fn set_action(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
 
         #[cfg(debug_assertions)]
         eprintln!("Command executed with non-zero exit status: {}", status);
+    }
+    if is_command_installed("nmcli") {
+        connect_to_nm_wifi(action)?;
+    } else if is_command_installed("iwctl") && !is_command_installed("nmcli") {
+        connect_to_iwd_wifi(action)?;
+    }
+
+    if is_command_installed("tailscale") {
+        set_mullvad_exit_node(action);
+        check_mullvad()?;
     }
 
     Ok(false)
