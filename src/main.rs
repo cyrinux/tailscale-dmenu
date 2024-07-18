@@ -43,15 +43,15 @@ display = "✅ - Enable tailscale"
 cmd = "tailscale up"
 
 [[actions]]
-display = "🌿 RaspberryPi"
+display = "🌿 - RaspberryPi"
 cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
 
 [[actions]]
-display = "🛡️ Shields up"
+display = "🛡️ - Shields up"
 cmd = "tailscale set --shields-up=true"
 
 [[actions]]
-display = "🛡️ Shields down"
+display = "🛡️ - Shields down"
 cmd = "tailscale set --shields-up=false"
 "#
 }
