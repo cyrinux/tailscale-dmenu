@@ -3,7 +3,7 @@ name = "tailscale-dmenu"
 version = "1.1.0"
 edition = "2021"
 authors = ["Cyril Levis"]
-categories = ["network::security", "utilities"]
+categories = ["gui"]
 keywords = ["tailscale", "dmenu", "network", "vpn", "wifi"]
 description = "A dmenu-based Tailscale and Wi-Fi network selector with support for NetworkManager and iwd."
 readme = "README.md"
@@ -17,4 +17,4 @@ serde = { version = "1.0", features = ["derive"] }
 toml = "0.5"
 regex = "1.5"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
-notify-rust = "4.6.1"
+notify-rust = "4"
