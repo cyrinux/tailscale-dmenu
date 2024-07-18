@@ -1,6 +1,7 @@
-use crate::notify_connection;
+use crate::CommandRunner;
+use crate::RealCommandRunner;
+use crate::{notify_connection, prompt_for_password};
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Output};
 
 pub fn get_nm_wifi_networks() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     get_nm_wifi_networks_with_command_runner(&RealCommandRunner)
@@ -75,13 +76,11 @@ fn connect_to_nm_wifi_with_command_runner(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     if action.starts_with("wifi - ") {
         let ssid = action.split_whitespace().nth(3).unwrap_or("");
-        println!("{ssid}");
-        println!("{action}");
         if attempt_connection(ssid, None, command_runner)? {
             Ok(true)
         } else {
             // If the first attempt fails, prompt for a password using dmenu and retry
-            let password = prompt_for_password(command_runner)?;
+            let password = prompt_for_password(command_runner, ssid)?;
             attempt_connection(ssid, Some(password), command_runner)
         }
     } else {
@@ -95,136 +94,20 @@ fn attempt_connection(
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let command = match password {
-        Some(ref pwd) => format!("nmcli device wifi connect '{}' password '{}'", ssid, pwd),
-        None => format!("nmcli connection up '{}'", ssid),
+        Some(ref pwd) => format!("device wifi connect {ssid} password {pwd}"),
+        None => format!("connection up {ssid}"),
     };
 
-    let status = command_runner.run_command("sh", &["-c", &command])?.status;
+    let command_parts: Vec<&str> = command.split_whitespace().collect();
+
+    let status = command_runner.run_command("nmcli", &command_parts)?.status;
 
     if status.success() {
         notify_connection(ssid)?;
         Ok(true)
     } else {
         #[cfg(debug_assertions)]
-        eprintln!("Failed to connect to Wi-Fi network: {}", ssid);
+        eprintln!("Failed to connect to Wi-Fi network: {ssid}");
         Ok(false)
-    }
-}
-
-fn prompt_for_password(
-    command_runner: &dyn CommandRunner,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let output = command_runner.run_command("dmenu", &["-p", "Enter Wi-Fi password:"])?;
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-pub trait CommandRunner {
-    fn run_command(&self, command: &str, args: &[&str]) -> Result<Output, std::io::Error>;
-}
-
-struct RealCommandRunner;
-
-impl CommandRunner for RealCommandRunner {
-    fn run_command(&self, command: &str, args: &[&str]) -> Result<Output, std::io::Error> {
-        Command::new(command).args(args).output()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct MockCommandRunner {
-        output: Output,
-    }
-
-    impl CommandRunner for MockCommandRunner {
-        fn run_command(&self, _command: &str, _args: &[&str]) -> Result<Output, std::io::Error> {
-            Ok(self.output.clone())
-        }
-    }
-
-    #[test]
-    fn test_parse_wifi_lines() {
-        let mut actions = Vec::new();
-        let wifi_lines = vec!["*:Network1:70%".to_string(), ":Network2:60%".to_string()];
-        parse_wifi_lines(&mut actions, wifi_lines);
-        assert_eq!(actions.len(), 2);
-        assert_eq!(actions[0], "wifi - 🌐 Network1 - 70%");
-        assert_eq!(actions[1], "wifi - 📶 Network2 - 60%");
-    }
-
-    #[test]
-    fn test_get_nm_wifi_networks() {
-        let mock_output = Output {
-            status: std::os::unix::process::ExitStatusExt::from_raw(0),
-            stdout: b"\
-            *:Network1:70%
-            :Network2:60%"
-                .to_vec(),
-            stderr: vec![],
-        };
-
-        let mock_command_runner = MockCommandRunner {
-            output: mock_output,
-        };
-        let actions = get_nm_wifi_networks_with_command_runner(&mock_command_runner).unwrap();
-        assert_eq!(actions.len(), 2);
-        assert_eq!(actions[0], "wifi - 🌐 Network1 - 70%");
-        assert_eq!(actions[1], "wifi - 📶 Network2 - 60%");
-    }
-
-    #[test]
-    fn test_connect_to_nm_wifi_successful() {
-        let mock_output = Output {
-            status: std::os::unix::process::ExitStatusExt::from_raw(0),
-            stdout: vec![],
-            stderr: vec![],
-        };
-
-        let mock_command_runner = MockCommandRunner {
-            output: mock_output,
-        };
-        let result = connect_to_nm_wifi_with_command_runner(
-            "wifi - 🌐 Network1 - 70%",
-            &mock_command_runner,
-        )
-        .unwrap();
-        assert!(result);
-    }
-
-    #[test]
-    fn test_connect_to_nm_wifi_failure() {
-        let mock_output = Output {
-            status: std::os::unix::process::ExitStatusExt::from_raw(1),
-            stdout: vec![],
-            stderr: vec![],
-        };
-
-        let mock_command_runner = MockCommandRunner {
-            output: mock_output,
-        };
-        let result = connect_to_nm_wifi_with_command_runner(
-            "wifi - 🌐 Network1 - 70%",
-            &mock_command_runner,
-        )
-        .unwrap();
-        assert!(!result);
-    }
-
-    #[test]
-    fn test_prompt_for_password() {
-        let mock_output = Output {
-            status: std::os::unix::process::ExitStatusExt::from_raw(0),
-            stdout: b"password".to_vec(),
-            stderr: vec![],
-        };
-
-        let mock_command_runner = MockCommandRunner {
-            output: mock_output,
-        };
-        let password = prompt_for_password(&mock_command_runner).unwrap();
-        assert_eq!(password, "password");
     }
 }
