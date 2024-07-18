@@ -1,4 +1,5 @@
-use crate::notify_connection;
+use crate::RealCommandRunner;
+use crate::{notify_connection, prompt_for_password};
 use regex::Regex;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
@@ -80,23 +81,37 @@ fn parse_iwd_networks(
 }
 
 pub fn connect_to_iwd_wifi(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    println!("connect test iwd");
     if action.starts_with("wifi - ") {
         let ssid = action.split_whitespace().nth(3).unwrap_or("");
-        let status = Command::new("sh")
-            .arg("-c")
-            .arg(format!("iwctl station wlan0 connect '{ssid}'"))
-            .status()?;
-
-        if status.success() {
-            notify_connection(ssid)?;
+        if attempt_connection(ssid, None)? {
             Ok(true)
         } else {
-            #[cfg(debug_assertions)]
-            eprintln!("Failed to connect to Wi-Fi network: {}", ssid);
-            Ok(false)
+            // If the first attempt fails, prompt for a passphrase using dmenu and retry
+            let passphrase = prompt_for_password(&RealCommandRunner, ssid)?;
+            attempt_connection(ssid, Some(passphrase))
         }
     } else {
+        Ok(false)
+    }
+}
+
+fn attempt_connection(
+    ssid: &str,
+    passphrase: Option<String>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let command = match passphrase {
+        Some(ref pwd) => format!("--passphrase '{}' station wlan0 connect '{}'", pwd, ssid),
+        None => format!("station wlan0 connect '{}'", ssid),
+    };
+
+    let status = Command::new("iwctl").args(command.split(' ')).status()?;
+
+    if status.success() {
+        notify_connection(ssid)?;
+        Ok(true)
+    } else {
+        #[cfg(debug_assertions)]
+        eprintln!("Failed to connect to Wi-Fi network: {}", ssid);
         Ok(false)
     }
 }

@@ -1,4 +1,5 @@
 use dirs::config_dir;
+
 use notify_rust::Notification;
 use reqwest::blocking::get;
 use serde::Deserialize;
@@ -6,7 +7,7 @@ use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use which::which;
 
 mod iwd;
@@ -161,6 +162,10 @@ fn is_command_installed(cmd: &str) -> bool {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    if !is_command_installed("pinentry-gnome3") || !is_command_installed("dmenu") {
+        panic!("pinentry-gnome3 or dmenu missing");
+    }
+
     create_default_config_if_missing()?;
 
     let actions = get_actions()?;
@@ -197,4 +202,38 @@ fn notify_connection(ssid: &str) -> Result<(), Box<dyn std::error::Error>> {
         .body(&format!("Connected to {}", ssid))
         .show()?;
     Ok(())
+}
+
+pub trait CommandRunner {
+    fn run_command(&self, command: &str, args: &[&str]) -> Result<Output, std::io::Error>;
+}
+
+pub struct RealCommandRunner;
+
+impl CommandRunner for RealCommandRunner {
+    fn run_command(&self, command: &str, args: &[&str]) -> Result<Output, std::io::Error> {
+        Command::new(command).args(args).output()
+    }
+}
+
+pub fn prompt_for_password(
+    command_runner: &dyn CommandRunner,
+    ssid: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let output = command_runner.run_command(
+        "sh",
+        &[
+            "-c",
+            &format!("echo 'SETDESC Enter '{ssid}' password\nGETPIN' | pinentry-gnome3"),
+        ],
+    )?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let password_line = stdout
+        .lines()
+        .find(|line| line.starts_with("D "))
+        .ok_or("Password not found")?;
+    let password = password_line.trim_start_matches("D ").trim().to_string();
+
+    Ok(password)
 }

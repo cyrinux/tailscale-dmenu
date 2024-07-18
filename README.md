@@ -29,6 +29,11 @@ A simple dmenu-based selector to manage Tailscale exit nodes and custom actions.
    cp target/release/tailscale-dmenu /usr/local/bin/
    ```
 
+## Requirements
+
+- `pinentry-gnome3` for the wifi password prompt.
+- `dmenu`
+
 ## Configuration
 
 The configuration file is located at `~/.config/tailscale-dmenu/config.toml`. If it doesn't exist, a default configuration will be created automatically.
