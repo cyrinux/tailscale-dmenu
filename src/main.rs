@@ -1,5 +1,5 @@
+use clap::Parser;
 use dirs::config_dir;
-
 use notify_rust::Notification;
 use reqwest::blocking::get;
 use serde::Deserialize;
@@ -14,9 +14,16 @@ mod iwd;
 mod mullvad;
 mod networkmanager;
 
-use iwd::{connect_to_iwd_wifi, get_iwd_networks};
+use iwd::{connect_to_iwd_wifi, disconnect_iwd_wifi, get_iwd_networks};
 use mullvad::{get_mullvad_actions, set_mullvad_exit_node};
 use networkmanager::{connect_to_nm_wifi, get_nm_wifi_networks};
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, default_value = "wlan0")]
+    wifi_interface: String,
+}
 
 #[derive(Deserialize)]
 struct Action {
@@ -27,10 +34,15 @@ struct Action {
 #[derive(Deserialize)]
 struct Config {
     actions: Vec<Action>,
+    dmenu_cmd: String,
+    dmenu_args: String,
 }
 
 fn get_default_config() -> &'static str {
     r#"
+dmenu_cmd = "dmenu"
+dmenu_args = "--no-multi"
+
 [[actions]]
 display = "❌ - Disable mullvad"
 cmd = "tailscale set --exit-node="
@@ -59,7 +71,7 @@ cmd = "tailscale set --shields-up=false"
 
 fn get_config_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let config_dir = config_dir().ok_or("Failed to find config directory")?;
-    Ok(config_dir.join("tailscale-dmenu").join("config.toml"))
+    Ok(config_dir.join("network-dmenu").join("config.toml"))
 }
 
 fn create_default_config_if_missing() -> Result<(), Box<dyn std::error::Error>> {
@@ -82,13 +94,33 @@ fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
-fn get_actions() -> Result<Vec<String>, Box<dyn Error>> {
+fn get_actions(args: &Args) -> Result<Vec<String>, Box<dyn Error>> {
     let config = get_config()?;
     let mut actions = config
         .actions
         .into_iter()
-        .map(|action| format!("action - {}", action.display))
+        .map(|action| format!("{:<8}- {}", "action", action.display))
         .collect::<Vec<_>>();
+
+    if is_command_installed("rfkill") {
+        actions.push(format!("{:<8}- 📶 - Radio wifi rfkill ON", "action"));
+        actions.push(format!("{:<8}- 📶 - Radio wifi rfkill OFF", "action"));
+    }
+
+    if is_command_installed("nm-connection-editor") {
+        actions.push(format!("{:<8}- 📶 - Edit connections", "action"));
+    }
+
+    if is_command_installed("nmcli") {
+        actions.push(format!("{:<8}- 📶 - Disconnect wifi", "action"));
+        actions.push(format!("{:<8}- 📶 - Connect wifi", "action"));
+    } else if is_command_installed("iwctl") {
+        actions.push(format!("{:<8}- 📶 - Disconnect wifi", "action"));
+    }
+
+    if is_command_installed("rfkill") {
+        actions.extend(get_mullvad_actions());
+    }
 
     if is_command_installed("tailscale") {
         actions.extend(get_mullvad_actions());
@@ -97,17 +129,21 @@ fn get_actions() -> Result<Vec<String>, Box<dyn Error>> {
     if is_command_installed("nmcli") {
         actions.extend(get_nm_wifi_networks()?);
     } else if is_command_installed("iwctl") {
-        actions.extend(get_iwd_networks()?);
+        actions.extend(get_iwd_networks(&args.wifi_interface)?);
     }
 
     Ok(actions)
 }
 
-fn handle_custom_action(action: &str, config: &Config) -> Result<bool, Box<dyn Error>> {
+fn handle_custom_action(
+    action: &str,
+    config: &Config,
+    wifi_interface: &str,
+) -> Result<bool, Box<dyn Error>> {
     if let Some(action_config) = config
         .actions
         .iter()
-        .find(|a| format!("action - {}", a.display) == action)
+        .find(|a| format!("{:<8}- {}", "action", a.display) == action)
     {
         #[cfg(debug_assertions)]
         eprintln!("Executing command: {}", action_config.cmd);
@@ -124,20 +160,54 @@ fn handle_custom_action(action: &str, config: &Config) -> Result<bool, Box<dyn E
         #[cfg(debug_assertions)]
         eprintln!("Command executed with non-zero exit status: {}", status);
     }
+
+    if action.contains("📶 - Radio wifi rfkill ON") {
+        let status = Command::new("rfkill").arg("unblock").arg("wlan").status()?;
+        return Ok(status.success());
+    }
+
+    if action.contains("📶 - Radio wifi rfkill OFF") {
+        let status = Command::new("rfkill").arg("block").arg("wlan").status()?;
+        return Ok(status.success());
+    }
+
+    if action.contains("📶 - Edit connections") {
+        let status = Command::new("nm-connection-editor").status()?;
+        return Ok(status.success());
+    }
+
+    if action.contains("📶 - Disconnect wifi") {
+        let status = if is_command_installed("nmcli") {
+            disconnect_nm_wifi(wifi_interface)?
+        } else {
+            disconnect_iwd_wifi(wifi_interface)?
+        };
+        return Ok(status);
+    }
+
+    if action.contains("📶 - Connect wifi") {
+        let status = Command::new("nmcli")
+            .arg("device")
+            .arg("connect")
+            .arg(wifi_interface)
+            .status()?;
+        return Ok(status.success());
+    }
+
     Ok(false)
 }
 
-fn set_action(action: &str) -> Result<bool, Box<dyn Error>> {
+fn set_action(wifi_interface: &str, action: &str) -> Result<bool, Box<dyn Error>> {
     let config = get_config()?;
 
-    if handle_custom_action(action, &config)? {
+    if handle_custom_action(action, &config, wifi_interface)? {
         return Ok(true);
     }
 
     if is_command_installed("nmcli") {
         connect_to_nm_wifi(action)?;
     } else if is_command_installed("iwctl") && !is_command_installed("nmcli") {
-        connect_to_iwd_wifi(action)?;
+        connect_to_iwd_wifi(wifi_interface, action)?;
     }
 
     if is_command_installed("tailscale") {
@@ -162,15 +232,20 @@ fn is_command_installed(cmd: &str) -> bool {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    if !is_command_installed("pinentry-gnome3") || !is_command_installed("dmenu") {
-        panic!("pinentry-gnome3 or dmenu missing");
-    }
+    let args = Args::parse();
 
     create_default_config_if_missing()?;
 
-    let actions = get_actions()?;
+    let config = get_config()?;
+
+    if !is_command_installed("pinentry-gnome3") || !is_command_installed(&config.dmenu_cmd) {
+        panic!("pinentry-gnome3 or dmenu command missing");
+    }
+
+    let actions = get_actions(&args)?;
     let action = {
-        let mut child = Command::new("dmenu")
+        let mut child = Command::new(&config.dmenu_cmd)
+            .args(config.dmenu_args.split_whitespace())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()?;
@@ -185,7 +260,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     if !action.is_empty() {
-        set_action(&action)?;
+        set_action(&args.wifi_interface, &action)?;
     }
 
     #[cfg(debug_assertions)]
@@ -199,7 +274,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn notify_connection(ssid: &str) -> Result<(), Box<dyn std::error::Error>> {
     Notification::new()
         .summary("Wi-Fi")
-        .body(&format!("Connected to {}", ssid))
+        .body(&format!("Connected to {ssid}"))
         .show()?;
     Ok(())
 }
@@ -236,4 +311,13 @@ pub fn prompt_for_password(
     let password = password_line.trim_start_matches("D ").trim().to_string();
 
     Ok(password)
+}
+
+fn disconnect_nm_wifi(interface: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let status = Command::new("nmcli")
+        .arg("device")
+        .arg("disconnect")
+        .arg(interface)
+        .status()?;
+    Ok(status.success())
 }

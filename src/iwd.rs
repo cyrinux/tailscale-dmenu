@@ -4,22 +4,22 @@ use regex::Regex;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 
-pub fn get_iwd_networks() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn get_iwd_networks(interface: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut actions = Vec::new();
 
-    if let Some(networks) = fetch_iwd_networks()? {
+    if let Some(networks) = fetch_iwd_networks(interface)? {
         let has_connected = networks.iter().any(|network| network.starts_with('>'));
 
         if !has_connected {
             // Rescan networks
             let rescan_output = Command::new("iwctl")
                 .arg("station")
-                .arg("wlan0")
+                .arg(interface)
                 .arg("scan")
                 .output()?;
 
             if rescan_output.status.success() {
-                if let Some(rescan_networks) = fetch_iwd_networks()? {
+                if let Some(rescan_networks) = fetch_iwd_networks(interface)? {
                     let _ = parse_iwd_networks(&mut actions, rescan_networks);
                 }
             }
@@ -31,10 +31,10 @@ pub fn get_iwd_networks() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     Ok(actions)
 }
 
-fn fetch_iwd_networks() -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
+fn fetch_iwd_networks(interface: &str) -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
     let output = Command::new("iwctl")
         .arg("station")
-        .arg("wlan0")
+        .arg(interface)
         .arg("get-networks")
         .output()?;
 
@@ -68,7 +68,8 @@ fn parse_iwd_networks(
             let ssid = parts[ssid_start..parts.len() - 2].join(" ");
             let signal = parts[parts.len() - 1].trim();
             let display = format!(
-                "wifi - {} {} - {}",
+                "{:<8}- {} {} - {}",
+                "wifi",
                 if connected { "🌐" } else { "📶" },
                 ssid,
                 signal
@@ -80,15 +81,18 @@ fn parse_iwd_networks(
     Ok(())
 }
 
-pub fn connect_to_iwd_wifi(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    if action.starts_with("wifi - ") {
+pub fn connect_to_iwd_wifi(
+    interface: &str,
+    action: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if action.starts_with("wifi") {
         let ssid = action.split_whitespace().nth(3).unwrap_or("");
-        if attempt_connection(ssid, None)? {
+        if attempt_connection(interface, ssid, None)? {
             Ok(true)
         } else {
             // If the first attempt fails, prompt for a passphrase using dmenu and retry
             let passphrase = prompt_for_password(&RealCommandRunner, ssid)?;
-            attempt_connection(ssid, Some(passphrase))
+            attempt_connection(interface, ssid, Some(passphrase))
         }
     } else {
         Ok(false)
@@ -96,12 +100,13 @@ pub fn connect_to_iwd_wifi(action: &str) -> Result<bool, Box<dyn std::error::Err
 }
 
 fn attempt_connection(
+    interface: &str,
     ssid: &str,
     passphrase: Option<String>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let command = match passphrase {
-        Some(ref pwd) => format!("--passphrase '{}' station wlan0 connect '{}'", pwd, ssid),
-        None => format!("station wlan0 connect '{}'", ssid),
+        Some(ref pwd) => format!("--passphrase '{pwd}' station {interface} connect '{ssid}'"),
+        None => format!("station {interface} connect '{ssid}'"),
     };
 
     let status = Command::new("iwctl").args(command.split(' ')).status()?;
@@ -111,7 +116,16 @@ fn attempt_connection(
         Ok(true)
     } else {
         #[cfg(debug_assertions)]
-        eprintln!("Failed to connect to Wi-Fi network: {}", ssid);
+        eprintln!("Failed to connect to Wi-Fi network: {ssid}");
         Ok(false)
     }
+}
+
+pub fn disconnect_iwd_wifi(interface: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let status = Command::new("iwctl")
+        .arg("station")
+        .arg(interface)
+        .arg("disconnect")
+        .status()?;
+    Ok(status.success())
 }

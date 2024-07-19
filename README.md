@@ -17,8 +17,8 @@ A simple dmenu-based selector to manage Tailscale exit nodes and custom actions.
 1. Ensure you have Rust installed. If not, you can install it from [rust-lang.org](https://www.rust-lang.org/).
 2. Clone this repository:
    ```sh
-   git clone https://github.com/cyrinux/tailscale-dmenu.git
-   cd tailscale-dmenu
+   git clone https://github.com/cyrinux/network-dmenu.git
+   cd network-dmenu
    ```
 3. Build the project:
    ```sh
@@ -26,7 +26,7 @@ A simple dmenu-based selector to manage Tailscale exit nodes and custom actions.
    ```
 4. Move the binary to a directory in your PATH:
    ```sh
-   cp target/release/tailscale-dmenu /usr/local/bin/
+   cp target/release/network-dmenu /usr/local/bin/
    ```
 
 ## Requirements
@@ -36,7 +36,7 @@ A simple dmenu-based selector to manage Tailscale exit nodes and custom actions.
 
 ## Configuration
 
-The configuration file is located at `~/.config/tailscale-dmenu/config.toml`. If it doesn't exist, a default configuration will be created automatically.
+The configuration file is located at `~/.config/network-dmenu/config.toml`. If it doesn't exist, a default configuration will be created automatically.
 
 ### Default Configuration
 
@@ -65,7 +65,7 @@ You can add more actions by editing this file.
 Run the following command to open the dmenu selector:
 
 ```sh
-tailscale-dmenu
+network-dmenu
 ```
 
 Select an action from the menu. The corresponding command will be executed.

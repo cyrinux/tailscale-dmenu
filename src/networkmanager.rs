@@ -55,7 +55,8 @@ fn parse_wifi_lines(actions: &mut Vec<String>, wifi_lines: Vec<String>) {
             let bars = parts[2].trim();
             if !ssid.is_empty() {
                 let display = format!(
-                    "wifi - {} {} - {}",
+                    "{:<8}- {} {} - {}",
+                    "wifi",
                     if in_use == "*" { "🌐" } else { "📶" },
                     ssid,
                     bars
@@ -74,12 +75,12 @@ fn connect_to_nm_wifi_with_command_runner(
     action: &str,
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    if action.starts_with("wifi - ") {
+    if action.starts_with("wifi") {
         let ssid = action.split_whitespace().nth(3).unwrap_or("");
         if attempt_connection(ssid, None, command_runner)? {
             Ok(true)
         } else {
-            // If the first attempt fails, prompt for a password using dmenu and retry
+            // If the first attempt fails, prompt for a password and retry
             let password = prompt_for_password(command_runner, ssid)?;
             attempt_connection(ssid, Some(password), command_runner)
         }

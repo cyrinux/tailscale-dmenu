@@ -16,7 +16,7 @@
       {
         defaultPackage = naersk-lib.buildPackage {
           src = ./.;
-          meta.mainProgram = "tailscale-dmenu";
+          meta.mainProgram = "network-dmenu";
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildInputs = libs;
         };

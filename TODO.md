@@ -2,4 +2,4 @@
 - maybe call mullvad check for wifi connection
 - remove scan custom actions
 - list in specific menu known network ssid, eg: iwctl known-networks list
-- make wlan0 and dmenu binary config
+- make dmenu binary config
