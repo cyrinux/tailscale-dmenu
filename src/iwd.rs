@@ -55,12 +55,38 @@ fn fetch_iwd_networks(interface: &str) -> Result<Option<Vec<String>>, Box<dyn st
     }
 }
 
+fn convert_network_strength(line: &str) -> String {
+    // Define the mapping for network strength symbols
+    let strength_symbols = ["_", "▂", "▄", "▆", "█"];
+
+    // Extract the stars from the end of the line
+    let stars = line.chars().rev().take_while(|&c| c == '*').count();
+    println!("{stars}");
+
+    // Create the network manager style representation
+    let network_strength = format!(
+        "{}{}{}{}",
+        strength_symbols.get(1).unwrap_or(&"_"),
+        strength_symbols
+            .get(if stars >= 2 { 2 } else { 0 })
+            .unwrap_or(&"_"),
+        strength_symbols
+            .get(if stars >= 3 { 3 } else { 0 })
+            .unwrap_or(&"_"),
+        strength_symbols
+            .get(if stars >= 4 { 4 } else { 0 })
+            .unwrap_or(&"_"),
+    );
+
+    network_strength
+}
+
 fn parse_iwd_networks(
     actions: &mut Vec<WifiAction>,
     networks: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Regex to remove ANSI color codes
-    let ansi_escape = Regex::new(r"\x1B\[[0-?]*[ -/]*[@-~]")?;
+    let ansi_escape = Regex::new(r"\x1B\[[0-9;]*m.*?\x1B\[0m")?;
 
     for network in networks {
         let line = ansi_escape.replace_all(&network, "").to_string();
@@ -71,10 +97,10 @@ fn parse_iwd_networks(
             let ssid = parts[ssid_start..parts.len() - 2].join(" ");
             let signal = parts[parts.len() - 1].trim();
             let display = format!(
-                "{} {} - {}",
+                "{} {} {}",
                 if connected { "🌐" } else { "📶" },
                 ssid,
-                signal
+                convert_network_strength(signal)
             );
             actions.push(WifiAction::Network(display));
         }

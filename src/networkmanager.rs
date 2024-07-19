@@ -54,7 +54,7 @@ fn parse_wifi_lines(actions: &mut Vec<WifiAction>, wifi_lines: Vec<String>) {
             let bars = parts[2].trim();
             if !ssid.is_empty() {
                 let display = format!(
-                    "{} {} - {}",
+                    "{} {} {}",
                     if in_use == "*" { "🌐" } else { "📶" },
                     ssid,
                     bars
