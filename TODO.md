@@ -1,5 +1,5 @@
 - use dbus instead of spawning shell if possible
 - maybe call mullvad check for wifi connection
-- remove scan custom actions
 - list in specific menu known network ssid, eg: iwctl known-networks list
-- make dmenu binary config
+- add alt-d for network deletion
+- add way to connect to ALL exit-node

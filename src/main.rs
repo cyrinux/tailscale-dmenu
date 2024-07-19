@@ -1,8 +1,7 @@
 use clap::Parser;
 use dirs::config_dir;
 use notify_rust::Notification;
-use reqwest::blocking::get;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
 use std::io::Write;
@@ -14,9 +13,11 @@ mod iwd;
 mod mullvad;
 mod networkmanager;
 
-use iwd::{connect_to_iwd_wifi, disconnect_iwd_wifi, get_iwd_networks};
-use mullvad::{get_mullvad_actions, set_mullvad_exit_node};
-use networkmanager::{connect_to_nm_wifi, get_nm_wifi_networks};
+use iwd::{connect_to_iwd_wifi, disconnect_iwd_wifi, get_iwd_networks, is_iwd_connected};
+use mullvad::{get_mullvad_actions, is_exit_node_active, set_mullvad_exit_node};
+use networkmanager::{
+    connect_to_nm_wifi, disconnect_nm_wifi, get_nm_wifi_networks, is_nm_connected,
+};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -25,17 +26,52 @@ struct Args {
     wifi_interface: String,
 }
 
-#[derive(Deserialize)]
-struct Action {
+#[derive(Debug, Deserialize, Serialize)]
+struct Config {
+    actions: Vec<CustomAction>,
+    dmenu_cmd: String,
+    dmenu_args: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct CustomAction {
     display: String,
     cmd: String,
 }
 
-#[derive(Deserialize)]
-struct Config {
-    actions: Vec<Action>,
-    dmenu_cmd: String,
-    dmenu_args: String,
+#[derive(Debug)]
+enum ActionType {
+    Custom(CustomAction),
+    System(SystemAction),
+    Mullvad(MullvadAction),
+    Wifi(WifiAction),
+}
+
+#[derive(Debug)]
+enum SystemAction {
+    RfkillBlock,
+    RfkillUnblock,
+    EditConnections,
+    DisconnectWifi,
+    ConnectWifi,
+    DisableExitNode,
+}
+
+#[derive(Debug)]
+enum MullvadAction {
+    EnableTailscale,
+    DisableTailscale,
+    SetExitNode(String),
+    SetShieldsUp(bool),
+}
+
+#[derive(Debug)]
+enum WifiAction {
+    Network(String),
+}
+
+pub fn format_entry(action: &str, icon: &str, text: &str) -> String {
+    format!("{action:<10}- {icon} {text}")
 }
 
 fn get_default_config() -> &'static str {
@@ -44,27 +80,23 @@ dmenu_cmd = "dmenu"
 dmenu_args = "--no-multi"
 
 [[actions]]
-display = "❌ - Disable mullvad"
-cmd = "tailscale set --exit-node="
-
-[[actions]]
-display = "❌ - Disable tailscale"
+display = "❌ Disable tailscale"
 cmd = "tailscale down"
 
 [[actions]]
-display = "✅ - Enable tailscale"
+display = "✅ Enable tailscale"
 cmd = "tailscale up"
 
 [[actions]]
-display = "🌿 - RaspberryPi"
+display = "🌿 RaspberryPi"
 cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
 
 [[actions]]
-display = "🛡️ - Shields up"
+display = "🛡️ Shields up"
 cmd = "tailscale set --shields-up=true"
 
 [[actions]]
-display = "🛡️ - Shields down"
+display = "🛡️ Shields down"
 cmd = "tailscale set --shields-up=false"
 "#
 }
@@ -94,137 +126,155 @@ fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
-fn get_actions(args: &Args) -> Result<Vec<String>, Box<dyn Error>> {
+fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
     let config = get_config()?;
     let mut actions = config
         .actions
         .into_iter()
-        .map(|action| format!("{:<8}- {}", "action", action.display))
+        .map(ActionType::Custom)
         .collect::<Vec<_>>();
 
     if is_command_installed("rfkill") {
-        actions.push(format!("{:<8}- 📶 - Radio wifi rfkill ON", "action"));
-        actions.push(format!("{:<8}- 📶 - Radio wifi rfkill OFF", "action"));
+        actions.push(ActionType::System(SystemAction::RfkillBlock));
+        actions.push(ActionType::System(SystemAction::RfkillUnblock));
     }
 
     if is_command_installed("nm-connection-editor") {
-        actions.push(format!("{:<8}- 📶 - Edit connections", "action"));
+        actions.push(ActionType::System(SystemAction::EditConnections));
     }
 
     if is_command_installed("nmcli") {
-        actions.push(format!("{:<8}- 📶 - Disconnect wifi", "action"));
-        actions.push(format!("{:<8}- 📶 - Connect wifi", "action"));
-    } else if is_command_installed("iwctl") {
-        actions.push(format!("{:<8}- 📶 - Disconnect wifi", "action"));
+        if is_nm_connected(&RealCommandRunner, &args.wifi_interface)? {
+            actions.push(ActionType::System(SystemAction::DisconnectWifi));
+        } else {
+            actions.push(ActionType::System(SystemAction::ConnectWifi));
+        }
+    } else if is_command_installed("iwctl") && is_iwd_connected(&args.wifi_interface)? {
+        actions.push(ActionType::System(SystemAction::DisconnectWifi));
     }
 
-    if is_command_installed("rfkill") {
-        actions.extend(get_mullvad_actions());
+    if is_exit_node_active()? {
+        actions.push(ActionType::System(SystemAction::DisableExitNode));
     }
 
     if is_command_installed("tailscale") {
-        actions.extend(get_mullvad_actions());
+        actions.extend(
+            get_mullvad_actions()
+                .into_iter()
+                .map(|m| ActionType::Mullvad(MullvadAction::SetExitNode(m))),
+        );
     }
 
     if is_command_installed("nmcli") {
-        actions.extend(get_nm_wifi_networks()?);
+        actions.extend(get_nm_wifi_networks()?.into_iter().map(ActionType::Wifi));
     } else if is_command_installed("iwctl") {
-        actions.extend(get_iwd_networks(&args.wifi_interface)?);
+        actions.extend(
+            get_iwd_networks(&args.wifi_interface)?
+                .into_iter()
+                .map(ActionType::Wifi),
+        );
     }
 
     Ok(actions)
 }
 
-fn handle_custom_action(
-    action: &str,
-    config: &Config,
+fn handle_custom_action(action: &CustomAction) -> Result<bool, Box<dyn Error>> {
+    let status = Command::new("sh").arg("-c").arg(&action.cmd).status()?;
+
+    Ok(status.success())
+}
+
+fn handle_system_action(
+    action: &SystemAction,
     wifi_interface: &str,
 ) -> Result<bool, Box<dyn Error>> {
-    if let Some(action_config) = config
-        .actions
-        .iter()
-        .find(|a| format!("{:<8}- {}", "action", a.display) == action)
-    {
-        #[cfg(debug_assertions)]
-        eprintln!("Executing command: {}", action_config.cmd);
-
-        let status = Command::new("sh")
-            .arg("-c")
-            .arg(&action_config.cmd)
-            .status()?;
-
-        if status.success() {
-            return Ok(true);
+    match action {
+        SystemAction::RfkillBlock => {
+            let status = Command::new("rfkill").arg("block").arg("wlan").status()?;
+            Ok(status.success())
         }
-
-        #[cfg(debug_assertions)]
-        eprintln!("Command executed with non-zero exit status: {}", status);
+        SystemAction::RfkillUnblock => {
+            let status = Command::new("rfkill").arg("unblock").arg("wlan").status()?;
+            Ok(status.success())
+        }
+        SystemAction::EditConnections => {
+            let status = Command::new("nm-connection-editor").status()?;
+            Ok(status.success())
+        }
+        SystemAction::DisconnectWifi => {
+            let status = if is_command_installed("nmcli") {
+                disconnect_nm_wifi(wifi_interface)?
+            } else {
+                disconnect_iwd_wifi(wifi_interface)?
+            };
+            Ok(status)
+        }
+        SystemAction::ConnectWifi => {
+            let status = Command::new("nmcli")
+                .arg("device")
+                .arg("connect")
+                .arg(wifi_interface)
+                .status()?;
+            Ok(status.success())
+        }
+        SystemAction::DisableExitNode => {
+            let status = Command::new("tailscale")
+                .arg("set")
+                .arg("--exit-node=")
+                .status()?;
+            Ok(status.success())
+        }
     }
-
-    if action.contains("📶 - Radio wifi rfkill ON") {
-        let status = Command::new("rfkill").arg("unblock").arg("wlan").status()?;
-        return Ok(status.success());
-    }
-
-    if action.contains("📶 - Radio wifi rfkill OFF") {
-        let status = Command::new("rfkill").arg("block").arg("wlan").status()?;
-        return Ok(status.success());
-    }
-
-    if action.contains("📶 - Edit connections") {
-        let status = Command::new("nm-connection-editor").status()?;
-        return Ok(status.success());
-    }
-
-    if action.contains("📶 - Disconnect wifi") {
-        let status = if is_command_installed("nmcli") {
-            disconnect_nm_wifi(wifi_interface)?
-        } else {
-            disconnect_iwd_wifi(wifi_interface)?
-        };
-        return Ok(status);
-    }
-
-    if action.contains("📶 - Connect wifi") {
-        let status = Command::new("nmcli")
-            .arg("device")
-            .arg("connect")
-            .arg(wifi_interface)
-            .status()?;
-        return Ok(status.success());
-    }
-
-    Ok(false)
 }
 
-fn set_action(wifi_interface: &str, action: &str) -> Result<bool, Box<dyn Error>> {
-    let config = get_config()?;
-
-    if handle_custom_action(action, &config, wifi_interface)? {
-        return Ok(true);
+fn handle_mullvad_action(action: &MullvadAction) -> Result<bool, Box<dyn Error>> {
+    match action {
+        MullvadAction::EnableTailscale => {
+            let status = Command::new("tailscale").arg("up").status()?;
+            Ok(status.success())
+        }
+        MullvadAction::DisableTailscale => {
+            let status = Command::new("tailscale").arg("down").status()?;
+            Ok(status.success())
+        }
+        MullvadAction::SetExitNode(node) => {
+            if set_mullvad_exit_node(node) {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+        MullvadAction::SetShieldsUp(enable) => {
+            let status = Command::new("tailscale")
+                .arg("set")
+                .arg("--shields-up")
+                .arg(if *enable { "true" } else { "false" })
+                .status()?;
+            Ok(status.success())
+        }
     }
-
-    if is_command_installed("nmcli") {
-        connect_to_nm_wifi(action)?;
-    } else if is_command_installed("iwctl") && !is_command_installed("nmcli") {
-        connect_to_iwd_wifi(wifi_interface, action)?;
-    }
-
-    if is_command_installed("tailscale") {
-        set_mullvad_exit_node(action);
-        check_mullvad()?;
-    }
-
-    Ok(false)
 }
 
-fn check_mullvad() -> Result<(), Box<dyn std::error::Error>> {
-    let response = get("https://am.i.mullvad.net/connected")?.text()?;
-    Notification::new()
-        .summary("Connected Status")
-        .body(response.trim())
-        .show()?;
-    Ok(())
+fn handle_wifi_action(action: &WifiAction, wifi_interface: &str) -> Result<bool, Box<dyn Error>> {
+    match action {
+        WifiAction::Network(network) => {
+            if is_command_installed("nmcli") {
+                connect_to_nm_wifi(network)?;
+            } else if is_command_installed("iwctl") {
+                connect_to_iwd_wifi(wifi_interface, network)?;
+            }
+            Ok(true)
+        }
+    }
+}
+
+fn set_action(wifi_interface: &str, action: ActionType) -> Result<bool, Box<dyn Error>> {
+    match action {
+        ActionType::Custom(custom_action) => handle_custom_action(&custom_action),
+        ActionType::System(system_action) => handle_system_action(&system_action, wifi_interface),
+        ActionType::Mullvad(mullvad_action) => handle_mullvad_action(&mullvad_action),
+        ActionType::Wifi(wifi_action) => handle_wifi_action(&wifi_action, wifi_interface),
+    }
 }
 
 fn is_command_installed(cmd: &str) -> bool {
@@ -252,7 +302,53 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         {
             let stdin = child.stdin.as_mut().ok_or("Failed to open stdin")?;
-            write!(stdin, "{}", actions.join("\n"))?;
+            let actions_display = actions
+                .iter()
+                .map(|action| match action {
+                    ActionType::Custom(custom_action) => {
+                        format!("{:<10}- {}", "action", &custom_action.display)
+                    }
+                    ActionType::System(system_action) => match system_action {
+                        SystemAction::RfkillBlock => {
+                            format_entry("action", "📶", "Radio wifi rfkill block")
+                        }
+                        SystemAction::RfkillUnblock => {
+                            format_entry("action", "📶", "Radio wifi rfkill unblock")
+                        }
+                        SystemAction::EditConnections => {
+                            format_entry("action", "📶", "Edit connections")
+                        }
+                        SystemAction::DisconnectWifi => {
+                            format_entry("action", "❌", "Disconnect wifi")
+                        }
+                        SystemAction::ConnectWifi => format_entry("action", "📶", "Connect wifi"),
+                        SystemAction::DisableExitNode => {
+                            format_entry("action", "❌", "Disable exit node")
+                        }
+                    },
+                    ActionType::Mullvad(mullvad_action) => match mullvad_action {
+                        MullvadAction::EnableTailscale => {
+                            format_entry("mullvad", "✅", "Enable tailscale")
+                        }
+                        MullvadAction::DisableTailscale => {
+                            format_entry("mullvad", "❌", "Disable tailscale")
+                        }
+                        MullvadAction::SetExitNode(node) => node.to_string(),
+                        MullvadAction::SetShieldsUp(enable) => {
+                            if *enable {
+                                format_entry("mullvad", "🛡️", "Shields up")
+                            } else {
+                                format_entry("mullvad", "🛡️", "Shields down")
+                            }
+                        }
+                    },
+                    ActionType::Wifi(wifi_action) => match wifi_action {
+                        WifiAction::Network(network) => format_entry("wifi", "", network),
+                    },
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            write!(stdin, "{}", actions_display)?;
         }
 
         let output = child.wait_with_output()?;
@@ -260,11 +356,59 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     if !action.is_empty() {
-        set_action(&args.wifi_interface, &action)?;
+        let selected_action = actions
+            .into_iter()
+            .find(|a| match a {
+                ActionType::Custom(custom_action) => {
+                    format!("{:<10}- {}", "action", &custom_action.display) == action
+                }
+                ActionType::System(system_action) => match system_action {
+                    SystemAction::RfkillBlock => {
+                        action == format_entry("action", "📶", "Radio wifi rfkill block")
+                    }
+                    SystemAction::RfkillUnblock => {
+                        action == format_entry("action", "📶", "Radio wifi rfkill unblock")
+                    }
+                    SystemAction::EditConnections => {
+                        action == format_entry("action", "📶", "Edit connections")
+                    }
+                    SystemAction::DisconnectWifi => {
+                        action == format_entry("action", "❌", "Disconnect wifi")
+                    }
+                    SystemAction::ConnectWifi => {
+                        action == format_entry("action", "📶", "Connect wifi")
+                    }
+                    SystemAction::DisableExitNode => {
+                        action == format_entry("action", "❌", "Disable exit node")
+                    }
+                },
+                ActionType::Mullvad(mullvad_action) => match mullvad_action {
+                    MullvadAction::EnableTailscale => {
+                        action == format_entry("mullvad", "✅", "Enable tailscale")
+                    }
+                    MullvadAction::DisableTailscale => {
+                        action == format_entry("mullvad", "❌", "Disable tailscale")
+                    }
+                    MullvadAction::SetExitNode(node) => action == *node,
+                    MullvadAction::SetShieldsUp(enable) => {
+                        if *enable {
+                            action == format_entry("mullvad", "🛡️", "Shields up")
+                        } else {
+                            action == format_entry("mullvad", "🛡️", "Shields down")
+                        }
+                    }
+                },
+                ActionType::Wifi(wifi_action) => match wifi_action {
+                    WifiAction::Network(network) => action == format_entry("wifi", "", network),
+                },
+            })
+            .ok_or("Selected action not found")?;
+
+        set_action(&args.wifi_interface, selected_action)?;
     }
 
     #[cfg(debug_assertions)]
-    {
+    if is_command_installed("tailscale") {
         Command::new("tailscale").arg("status").status()?;
     }
 
@@ -311,13 +455,4 @@ pub fn prompt_for_password(
     let password = password_line.trim_start_matches("D ").trim().to_string();
 
     Ok(password)
-}
-
-fn disconnect_nm_wifi(interface: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let status = Command::new("nmcli")
-        .arg("device")
-        .arg("disconnect")
-        .arg(interface)
-        .status()?;
-    Ok(status.success())
 }

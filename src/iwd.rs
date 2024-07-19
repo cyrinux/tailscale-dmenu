@@ -1,10 +1,14 @@
-use crate::RealCommandRunner;
-use crate::{notify_connection, prompt_for_password};
-use regex::Regex;
+use crate::format_entry;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 
-pub fn get_iwd_networks(interface: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+use crate::RealCommandRunner;
+use crate::{notify_connection, prompt_for_password};
+use regex::Regex;
+
+use crate::WifiAction;
+
+pub fn get_iwd_networks(interface: &str) -> Result<Vec<WifiAction>, Box<dyn std::error::Error>> {
     let mut actions = Vec::new();
 
     if let Some(networks) = fetch_iwd_networks(interface)? {
@@ -53,7 +57,7 @@ fn fetch_iwd_networks(interface: &str) -> Result<Option<Vec<String>>, Box<dyn st
 }
 
 fn parse_iwd_networks(
-    actions: &mut Vec<String>,
+    actions: &mut Vec<WifiAction>,
     networks: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Regex to remove ANSI color codes
@@ -68,13 +72,12 @@ fn parse_iwd_networks(
             let ssid = parts[ssid_start..parts.len() - 2].join(" ");
             let signal = parts[parts.len() - 1].trim();
             let display = format!(
-                "{:<8}- {} {} - {}",
-                "wifi",
+                "{} {} - {}",
                 if connected { "🌐" } else { "📶" },
                 ssid,
                 signal
             );
-            actions.push(display);
+            actions.push(WifiAction::Network(display));
         }
     }
 
@@ -85,18 +88,37 @@ pub fn connect_to_iwd_wifi(
     interface: &str,
     action: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    if action.starts_with("wifi") {
-        let ssid = action.split_whitespace().nth(3).unwrap_or("");
-        if attempt_connection(interface, ssid, None)? {
-            Ok(true)
-        } else {
-            // If the first attempt fails, prompt for a passphrase using dmenu and retry
+    if let Some(ssid) = action.split_whitespace().nth(3) {
+        if !is_known_network(ssid)? {
             let passphrase = prompt_for_password(&RealCommandRunner, ssid)?;
             attempt_connection(interface, ssid, Some(passphrase))
+        } else {
+            attempt_connection(interface, ssid, None)
         }
     } else {
         Ok(false)
     }
+}
+
+fn is_known_network(ssid: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let output = Command::new("iwctl")
+        .arg("known-networks")
+        .arg("list")
+        .output()?;
+
+    if output.status.success() {
+        let reader = BufReader::new(output.stdout.as_slice());
+        let ssid_pattern = format!(r"\b{}\b", regex::escape(ssid));
+        let re = Regex::new(&ssid_pattern)?;
+
+        for line in reader.lines() {
+            let line = line?;
+            if re.is_match(&line) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 fn attempt_connection(
@@ -104,12 +126,18 @@ fn attempt_connection(
     ssid: &str,
     passphrase: Option<String>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let command = match passphrase {
-        Some(ref pwd) => format!("--passphrase '{pwd}' station {interface} connect '{ssid}'"),
-        None => format!("station {interface} connect '{ssid}'"),
-    };
+    let mut command_args = vec![
+        "station".to_string(),
+        interface.to_string(),
+        "connect".to_string(),
+        ssid.to_string(),
+    ];
+    if let Some(pwd) = passphrase {
+        command_args.push("--passphrase".to_string());
+        command_args.push(pwd);
+    }
 
-    let status = Command::new("iwctl").args(command.split(' ')).status()?;
+    let status = Command::new("iwctl").args(&command_args).status()?;
 
     if status.success() {
         notify_connection(ssid)?;
@@ -128,4 +156,23 @@ pub fn disconnect_iwd_wifi(interface: &str) -> Result<bool, Box<dyn std::error::
         .arg("disconnect")
         .status()?;
     Ok(status.success())
+}
+
+pub fn is_iwd_connected(interface: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let output = Command::new("iwctl")
+        .arg("station")
+        .arg(interface)
+        .arg("show")
+        .output()?;
+
+    if output.status.success() {
+        let reader = BufReader::new(output.stdout.as_slice());
+        for line in reader.lines() {
+            let line = line?;
+            if line.contains("Connected") {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }

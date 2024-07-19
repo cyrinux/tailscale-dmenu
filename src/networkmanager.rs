@@ -1,15 +1,16 @@
-use crate::CommandRunner;
-use crate::RealCommandRunner;
-use crate::{notify_connection, prompt_for_password};
+use crate::{notify_connection, prompt_for_password, CommandRunner, RealCommandRunner};
 use std::io::{BufRead, BufReader};
+use std::process::Command;
 
-pub fn get_nm_wifi_networks() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+use crate::WifiAction;
+
+pub fn get_nm_wifi_networks() -> Result<Vec<WifiAction>, Box<dyn std::error::Error>> {
     get_nm_wifi_networks_with_command_runner(&RealCommandRunner)
 }
 
 fn get_nm_wifi_networks_with_command_runner(
     command_runner: &dyn CommandRunner,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+) -> Result<Vec<WifiAction>, Box<dyn std::error::Error>> {
     let mut actions = Vec::new();
 
     if let Some(lines) = fetch_wifi_lines(command_runner)? {
@@ -46,7 +47,7 @@ fn fetch_wifi_lines(
     }
 }
 
-fn parse_wifi_lines(actions: &mut Vec<String>, wifi_lines: Vec<String>) {
+fn parse_wifi_lines(actions: &mut Vec<WifiAction>, wifi_lines: Vec<String>) {
     for line in wifi_lines {
         let parts: Vec<&str> = line.split(':').collect();
         if parts.len() == 3 {
@@ -55,13 +56,12 @@ fn parse_wifi_lines(actions: &mut Vec<String>, wifi_lines: Vec<String>) {
             let bars = parts[2].trim();
             if !ssid.is_empty() {
                 let display = format!(
-                    "{:<8}- {} {} - {}",
-                    "wifi",
+                    "{} {} - {}",
                     if in_use == "*" { "🌐" } else { "📶" },
                     ssid,
                     bars
                 );
-                actions.push(display);
+                actions.push(WifiAction::Network(display));
             }
         }
     }
@@ -75,8 +75,7 @@ fn connect_to_nm_wifi_with_command_runner(
     action: &str,
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    if action.starts_with("wifi") {
-        let ssid = action.split_whitespace().nth(3).unwrap_or("");
+    if let Some(ssid) = action.split_whitespace().nth(1) {
         if attempt_connection(ssid, None, command_runner)? {
             Ok(true)
         } else {
@@ -111,4 +110,30 @@ fn attempt_connection(
         eprintln!("Failed to connect to Wi-Fi network: {ssid}");
         Ok(false)
     }
+}
+
+pub fn disconnect_nm_wifi(interface: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let status = Command::new("nmcli")
+        .arg("device")
+        .arg("disconnect")
+        .arg(interface)
+        .status()?;
+    Ok(status.success())
+}
+
+pub fn is_nm_connected(
+    command_runner: &dyn CommandRunner,
+    interface: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let output =
+        command_runner.run_command("nmcli", &["-t", "-f", "DEVICE,STATE", "device", "status"])?;
+    let reader = BufReader::new(output.stdout.as_slice());
+    for line in reader.lines() {
+        let line = line?;
+        let parts: Vec<&str> = line.split(':').collect();
+        if parts.len() == 2 && parts[0].trim() == interface && parts[1].trim() == "connected" {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
