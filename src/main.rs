@@ -28,6 +28,7 @@ struct Args {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Config {
+    #[serde(default)]
     actions: Vec<CustomAction>,
     dmenu_cmd: String,
     dmenu_args: String,
