@@ -4,3 +4,4 @@
 - add alt-d for network deletion
 - add way to connect to ALL exit-node
 - make a parser for iwd signal that throw the same ansii art as nm
+- re-add nm manual scan action

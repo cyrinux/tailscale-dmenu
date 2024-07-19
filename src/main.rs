@@ -14,7 +14,7 @@ mod mullvad;
 mod networkmanager;
 
 use iwd::{connect_to_iwd_wifi, disconnect_iwd_wifi, get_iwd_networks, is_iwd_connected};
-use mullvad::{get_mullvad_actions, is_exit_node_active, set_exit_node};
+use mullvad::{check_mullvad, get_mullvad_actions, is_exit_node_active, set_exit_node};
 use networkmanager::{
     connect_to_nm_wifi, disconnect_nm_wifi, get_nm_wifi_networks, is_nm_connected,
 };
@@ -93,10 +93,6 @@ display = "✅ Enable tailscale"
 cmd = "tailscale up"
 
 [[actions]]
-display = "🌿 RaspberryPi"
-cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
-
-[[actions]]
 display = "🛡️ Shields up"
 cmd = "tailscale set --shields-up=true"
 
@@ -139,16 +135,6 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
         .map(ActionType::Custom)
         .collect::<Vec<_>>();
 
-    if is_command_installed("nmcli") {
-        if is_nm_connected(&RealCommandRunner, &args.wifi_interface)? {
-            actions.push(ActionType::System(SystemAction::DisconnectWifi));
-        } else {
-            actions.push(ActionType::System(SystemAction::ConnectWifi));
-        }
-    } else if is_command_installed("iwctl") && is_iwd_connected(&args.wifi_interface)? {
-        actions.push(ActionType::System(SystemAction::DisconnectWifi));
-    }
-
     if is_exit_node_active()? {
         actions.push(ActionType::System(SystemAction::DisableExitNode));
     }
@@ -161,6 +147,16 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
                 .into_iter()
                 .map(ActionType::Wifi),
         );
+    }
+
+    if is_command_installed("nmcli") {
+        if is_nm_connected(&RealCommandRunner, &args.wifi_interface)? {
+            actions.push(ActionType::System(SystemAction::DisconnectWifi));
+        } else {
+            actions.push(ActionType::System(SystemAction::ConnectWifi));
+        }
+    } else if is_command_installed("iwctl") && is_iwd_connected(&args.wifi_interface)? {
+        actions.push(ActionType::System(SystemAction::DisconnectWifi));
     }
 
     if is_command_installed("rfkill") {
@@ -220,6 +216,7 @@ fn handle_system_action(
                 .arg("connect")
                 .arg(wifi_interface)
                 .status()?;
+            check_mullvad()?;
             Ok(status.success())
         }
         SystemAction::DisableExitNode => {
@@ -227,6 +224,7 @@ fn handle_system_action(
                 .arg("set")
                 .arg("--exit-node=")
                 .status()?;
+            check_mullvad()?;
             Ok(status.success())
         }
     }
@@ -244,8 +242,10 @@ fn handle_mullvad_action(action: &MullvadAction) -> Result<bool, Box<dyn Error>>
         }
         MullvadAction::SetExitNode(node) => {
             if set_exit_node(node) {
+                check_mullvad()?;
                 Ok(true)
             } else {
+                check_mullvad()?;
                 Ok(false)
             }
         }
@@ -268,6 +268,7 @@ fn handle_wifi_action(action: &WifiAction, wifi_interface: &str) -> Result<bool,
             } else if is_command_installed("iwctl") {
                 connect_to_iwd_wifi(wifi_interface, network)?;
             }
+            check_mullvad()?;
             Ok(true)
         }
     }

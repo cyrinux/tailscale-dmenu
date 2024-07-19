@@ -1,11 +1,22 @@
 use crate::format_entry;
+use notify_rust::Notification;
 use regex::Regex;
+use reqwest::blocking::get;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
 pub fn get_mullvad_actions() -> Vec<String> {
     get_mullvad_actions_with_command_runner(&RealCommandRunner)
+}
+
+pub fn check_mullvad() -> Result<(), Box<dyn std::error::Error>> {
+    let response = get("https://am.i.mullvad.net/connected")?.text()?;
+    Notification::new()
+        .summary("Connected Status")
+        .body(response.trim())
+        .show()?;
+    Ok(())
 }
 
 fn get_mullvad_actions_with_command_runner(command_runner: &dyn CommandRunner) -> Vec<String> {
