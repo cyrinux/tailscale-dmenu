@@ -68,8 +68,6 @@ pub fn set_mullvad_exit_node(action: &str) -> bool {
         None => return false,
     };
 
-    println!("{node_name}");
-
     if !execute_command("tailscale", &["up"]) {
         return false;
     }
@@ -86,7 +84,6 @@ pub fn set_mullvad_exit_node(action: &str) -> bool {
 }
 
 fn extract_node_name(action: &str) -> Option<&str> {
-    println!("{action}");
     let regex = Regex::new(r" ([\w_.-]+)$").ok()?;
     regex
         .captures(action)

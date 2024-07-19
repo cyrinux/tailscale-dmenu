@@ -72,7 +72,11 @@ enum WifiAction {
 }
 
 pub fn format_entry(action: &str, icon: &str, text: &str) -> String {
-    format!("{action:<10}- {icon} {text}")
+    if icon.is_empty() {
+        format!("{action:<10}- {text}")
+    } else {
+        format!("{action:<10}- {icon} {text}")
+    }
 }
 
 fn get_default_config() -> &'static str {
@@ -307,7 +311,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .iter()
                 .map(|action| match action {
                     ActionType::Custom(custom_action) => {
-                        format!("{:<10}- {}", "action", &custom_action.display)
+                        format_entry("action", "", &custom_action.display)
                     }
                     ActionType::System(system_action) => match system_action {
                         SystemAction::RfkillBlock => {
@@ -361,7 +365,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .into_iter()
             .find(|a| match a {
                 ActionType::Custom(custom_action) => {
-                    format!("{:<10}- {}", "action", &custom_action.display) == action
+                    format_entry("action", "", &custom_action.display) == action
                 }
                 ActionType::System(system_action) => match system_action {
                     SystemAction::RfkillBlock => {

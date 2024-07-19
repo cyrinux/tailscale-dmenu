@@ -1,8 +1,6 @@
-use crate::{notify_connection, prompt_for_password, CommandRunner, RealCommandRunner};
+use crate::{notify_connection, prompt_for_password, CommandRunner, RealCommandRunner, WifiAction};
 use std::io::{BufRead, BufReader};
 use std::process::Command;
-
-use crate::WifiAction;
 
 pub fn get_nm_wifi_networks() -> Result<Vec<WifiAction>, Box<dyn std::error::Error>> {
     get_nm_wifi_networks_with_command_runner(&RealCommandRunner)
