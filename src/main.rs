@@ -14,7 +14,7 @@ mod mullvad;
 mod networkmanager;
 
 use iwd::{connect_to_iwd_wifi, disconnect_iwd_wifi, get_iwd_networks, is_iwd_connected};
-use mullvad::{get_mullvad_actions, is_exit_node_active, set_mullvad_exit_node};
+use mullvad::{get_mullvad_actions, is_exit_node_active, set_exit_node};
 use networkmanager::{
     connect_to_nm_wifi, disconnect_nm_wifi, get_nm_wifi_networks, is_nm_connected,
 };
@@ -139,15 +139,6 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
         .map(ActionType::Custom)
         .collect::<Vec<_>>();
 
-    if is_command_installed("rfkill") {
-        actions.push(ActionType::System(SystemAction::RfkillBlock));
-        actions.push(ActionType::System(SystemAction::RfkillUnblock));
-    }
-
-    if is_command_installed("nm-connection-editor") {
-        actions.push(ActionType::System(SystemAction::EditConnections));
-    }
-
     if is_command_installed("nmcli") {
         if is_nm_connected(&RealCommandRunner, &args.wifi_interface)? {
             actions.push(ActionType::System(SystemAction::DisconnectWifi));
@@ -162,14 +153,6 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
         actions.push(ActionType::System(SystemAction::DisableExitNode));
     }
 
-    if is_command_installed("tailscale") {
-        actions.extend(
-            get_mullvad_actions()
-                .into_iter()
-                .map(|m| ActionType::Mullvad(MullvadAction::SetExitNode(m))),
-        );
-    }
-
     if is_command_installed("nmcli") {
         actions.extend(get_nm_wifi_networks()?.into_iter().map(ActionType::Wifi));
     } else if is_command_installed("iwctl") {
@@ -177,6 +160,23 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
             get_iwd_networks(&args.wifi_interface)?
                 .into_iter()
                 .map(ActionType::Wifi),
+        );
+    }
+
+    if is_command_installed("rfkill") {
+        actions.push(ActionType::System(SystemAction::RfkillBlock));
+        actions.push(ActionType::System(SystemAction::RfkillUnblock));
+    }
+
+    if is_command_installed("nm-connection-editor") {
+        actions.push(ActionType::System(SystemAction::EditConnections));
+    }
+
+    if is_command_installed("tailscale") {
+        actions.extend(
+            get_mullvad_actions()
+                .into_iter()
+                .map(|m| ActionType::Mullvad(MullvadAction::SetExitNode(m))),
         );
     }
 
@@ -243,7 +243,7 @@ fn handle_mullvad_action(action: &MullvadAction) -> Result<bool, Box<dyn Error>>
             Ok(status.success())
         }
         MullvadAction::SetExitNode(node) => {
-            if set_mullvad_exit_node(node) {
+            if set_exit_node(node) {
                 Ok(true)
             } else {
                 Ok(false)

@@ -1,4 +1,3 @@
-use crate::format_entry;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 

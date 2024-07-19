@@ -62,7 +62,7 @@ fn parse_exit_node_line(line: &str, regex: &Regex) -> String {
     format_entry("exit-node", "🌿", &format!("{node_name} - {node_ip}"))
 }
 
-pub fn set_mullvad_exit_node(action: &str) -> bool {
+pub fn set_exit_node(action: &str) -> bool {
     let node_name = match extract_node_name(action) {
         Some(name) => name,
         None => return false,
