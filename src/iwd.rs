@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 use crate::RealCommandRunner;
-use crate::{notify_connection, prompt_for_password};
+use crate::{is_known_network, notify_connection, prompt_for_password};
 use regex::Regex;
 
 use crate::WifiAction;
@@ -123,27 +123,6 @@ pub fn connect_to_iwd_wifi(
     } else {
         Ok(false)
     }
-}
-
-fn is_known_network(ssid: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let output = Command::new("iwctl")
-        .arg("known-networks")
-        .arg("list")
-        .output()?;
-
-    if output.status.success() {
-        let reader = BufReader::new(output.stdout.as_slice());
-        let ssid_pattern = format!(r"\b{}\b", regex::escape(ssid));
-        let re = Regex::new(&ssid_pattern)?;
-
-        for line in reader.lines() {
-            let line = line?;
-            if re.is_match(&line) {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
 }
 
 fn attempt_connection(

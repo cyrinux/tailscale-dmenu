@@ -1,4 +1,7 @@
-use crate::{notify_connection, prompt_for_password, CommandRunner, RealCommandRunner, WifiAction};
+use crate::{
+    is_known_network, notify_connection, prompt_for_password, CommandRunner, RealCommandRunner,
+    WifiAction,
+};
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 
@@ -74,7 +77,7 @@ fn connect_to_nm_wifi_with_command_runner(
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     if let Some(ssid) = action.split_whitespace().nth(1) {
-        if attempt_connection(ssid, None, command_runner)? {
+        if is_known_network(ssid)? && attempt_connection(ssid, None, command_runner)? {
             Ok(true)
         } else {
             // If the first attempt fails, prompt for a password and retry
