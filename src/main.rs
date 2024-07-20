@@ -433,9 +433,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     WifiAction::Connect => action == format_entry("wifi", "📶", "Connect"),
                 },
                 ActionType::Bluetooth(bluetooth_action) => match bluetooth_action {
-                    BluetoothAction::Connect(device) => {
-                        action == format_entry("bluetooth", "", device)
-                    }
+                    BluetoothAction::Connect(device) => &action == device,
                     BluetoothAction::Disconnect => {
                         action == format_entry("bluetooth", "❌", "Disconnect")
                     }
