@@ -2,6 +2,4 @@
 - maybe call mullvad check for wifi connection
 - list in specific menu known network ssid, eg: iwctl known-networks list
 - add alt-d for network deletion
-- add way to connect to ALL exit-node
-- make a parser for iwd signal that throw the same ansii art as nm
-- re-add nm manual scan action
+- add tailscale netcheck

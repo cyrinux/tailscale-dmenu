@@ -30,6 +30,12 @@ use networkmanager::{
 struct Args {
     #[arg(short, long, default_value = "wlan0")]
     wifi_interface: String,
+    #[arg(long)]
+    no_wifi: bool,
+    #[arg(long)]
+    no_bluetooth: bool,
+    #[arg(long)]
+    no_tailscale: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -129,13 +135,13 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
         .map(ActionType::Custom)
         .collect::<Vec<_>>();
 
-    if is_command_installed("tailscale") && is_exit_node_active()? {
+    if !args.no_tailscale && is_command_installed("tailscale") && is_exit_node_active()? {
         actions.push(ActionType::Tailscale(TailscaleAction::DisableExitNode));
     }
 
-    if is_command_installed("nmcli") {
+    if !args.no_wifi && is_command_installed("nmcli") {
         actions.extend(get_nm_wifi_networks()?.into_iter().map(ActionType::Wifi));
-    } else if is_command_installed("iwctl") {
+    } else if !args.no_wifi && is_command_installed("iwctl") {
         actions.extend(
             get_iwd_networks(&args.wifi_interface)?
                 .into_iter()
@@ -143,26 +149,29 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
         );
     }
 
-    if is_command_installed("nmcli") {
+    if !args.no_wifi && is_command_installed("nmcli") {
         if is_nm_connected(&RealCommandRunner, &args.wifi_interface)? {
             actions.push(ActionType::Wifi(WifiAction::Disconnect));
         } else {
             actions.push(ActionType::Wifi(WifiAction::Connect));
         }
-    } else if is_command_installed("iwctl") && is_iwd_connected(&args.wifi_interface)? {
+    } else if !args.no_wifi
+        && is_command_installed("iwctl")
+        && is_iwd_connected(&args.wifi_interface)?
+    {
         actions.push(ActionType::Wifi(WifiAction::Disconnect));
     }
 
-    if is_command_installed("rfkill") {
+    if !args.no_wifi && is_command_installed("rfkill") {
         actions.push(ActionType::System(SystemAction::RfkillBlock));
         actions.push(ActionType::System(SystemAction::RfkillUnblock));
     }
 
-    if is_command_installed("nm-connection-editor") {
+    if !args.no_wifi && is_command_installed("nm-connection-editor") {
         actions.push(ActionType::System(SystemAction::EditConnections));
     }
 
-    if is_command_installed("tailscale") {
+    if !args.no_tailscale && is_command_installed("tailscale") {
         actions.push(ActionType::Tailscale(TailscaleAction::SetEnable(
             !is_tailscale_enabled()?,
         )));
@@ -175,7 +184,7 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
         );
     }
 
-    if is_command_installed("bluetoothctl") {
+    if !args.no_bluetooth && is_command_installed("bluetoothctl") {
         actions.extend(
             get_paired_bluetooth_devices()?
                 .into_iter()
