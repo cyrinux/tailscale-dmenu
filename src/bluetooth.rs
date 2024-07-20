@@ -33,7 +33,7 @@ fn parse_bluetooth_device(line: String) -> Option<BluetoothAction> {
     if parts.len() >= 2 {
         let address = parts[1].to_string();
         let name = parts[2..].join(" ");
-        Some(BluetoothAction::Connect(format!("{name} - {address}")))
+        Some(BluetoothAction::Connect(format!("{name} ({address})")))
     } else {
         None
     }
