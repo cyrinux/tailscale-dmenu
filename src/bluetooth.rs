@@ -33,7 +33,7 @@ fn parse_bluetooth_device(line: String) -> Option<BluetoothAction> {
     if parts.len() >= 2 {
         let address = parts[1].to_string();
         let name = parts[2..].join(" ");
-        Some(BluetoothAction::Connect(format!("{name} ({address})")))
+        Some(BluetoothAction::Connect(format!(" {name} - {address}")))
     } else {
         None
     }
@@ -59,7 +59,7 @@ pub fn connect_to_bluetooth_device(device: &str) -> Result<bool, Box<dyn Error>>
 }
 
 fn extract_device_address(device: &str) -> Option<String> {
-    let re = Regex::new(r"\(([^)]+)\)").ok()?;
+    let re = Regex::new(r" ([\w:]+)$").ok()?;
     re.captures(device)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
