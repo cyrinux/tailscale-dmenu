@@ -70,7 +70,7 @@ fn parse_wifi_lines(actions: &mut Vec<WifiAction>, wifi_lines: Vec<String>) {
             if !ssid.is_empty() {
                 let display = format!(
                     "{} {} {}",
-                    if in_use == "*" { "🌐" } else { "📶" },
+                    if in_use == "*" { "✅" } else { "📶" },
                     ssid,
                     convert_network_strength(signal)
                 );
