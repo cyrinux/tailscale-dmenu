@@ -66,10 +66,9 @@ fn parse_iwd_networks(
         let line = ansi_escape.replace_all(&network, "").to_string();
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 3 {
-            let connected = parts[0] == ">";
-            let ssid_start = if connected { 1 } else { 0 };
-            let ssid = parts[ssid_start..parts.len() - 2].join(" ");
-            let signal = parts[parts.len() - 1].trim();
+            let connected = network.split_whitespace().count() > 3;
+            let ssid = parts[0].trim();
+            let signal = parts[2].trim();
             let display = format!(
                 "{} {} {}",
                 if connected { "🌐" } else { "📶" },
