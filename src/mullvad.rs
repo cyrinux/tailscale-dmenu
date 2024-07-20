@@ -2,6 +2,7 @@ use crate::format_entry;
 use notify_rust::Notification;
 use regex::Regex;
 use reqwest::blocking::get;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
@@ -24,6 +25,8 @@ fn get_mullvad_actions_with_command_runner(command_runner: &dyn CommandRunner) -
         .run_command("tailscale", &["exit-node", "list"])
         .expect("Failed to execute command");
 
+    let active_exit_node = get_active_exit_node();
+
     if output.status.success() {
         let reader = BufReader::new(output.stdout.as_slice());
         let regex = Regex::new(r"\s{2,}").unwrap();
@@ -32,7 +35,7 @@ fn get_mullvad_actions_with_command_runner(command_runner: &dyn CommandRunner) -
             .lines()
             .map_while(Result::ok)
             .filter(|line| line.contains("mullvad.ts.net"))
-            .map(|line| parse_mullvad_line(&line, &regex))
+            .map(|line| parse_mullvad_line(&line, &regex, &active_exit_node))
             .collect();
 
         let reader = BufReader::new(output.stdout.as_slice());
@@ -41,7 +44,7 @@ fn get_mullvad_actions_with_command_runner(command_runner: &dyn CommandRunner) -
                 .lines()
                 .map_while(Result::ok)
                 .filter(|line| line.contains("ts.net") && !line.contains("mullvad.ts.net"))
-                .map(|line| parse_exit_node_line(&line, &regex)),
+                .map(|line| parse_exit_node_line(&line, &regex, &active_exit_node)),
         );
 
         actions.sort_by(|a, b| {
@@ -55,24 +58,55 @@ fn get_mullvad_actions_with_command_runner(command_runner: &dyn CommandRunner) -
     }
 }
 
-fn parse_mullvad_line(line: &str, regex: &Regex) -> String {
+fn parse_mullvad_line(line: &str, regex: &Regex, active_exit_node: &str) -> String {
     let parts: Vec<&str> = regex.split(line).collect();
     let country = parts.get(2).unwrap_or(&"");
     let node_name = parts.get(1).unwrap_or(&"");
+    let is_active = active_exit_node == *node_name;
     format_entry(
         "mullvad",
-        get_flag(country),
+        if is_active { "✅" } else { get_flag(country) },
         &format!("{country} - {node_name}"),
     )
 }
 
-fn parse_exit_node_line(line: &str, regex: &Regex) -> String {
+fn parse_exit_node_line(line: &str, regex: &Regex, active_exit_node: &str) -> String {
     let parts: Vec<&str> = regex.split(line).collect();
     let node_ip = parts.first().unwrap_or(&"").trim();
     let node_name = parts.get(1).unwrap_or(&"");
-    format_entry("exit-node", "🌿", &format!("{node_name} - {node_ip}"))
+    let is_active = active_exit_node == *node_name;
+    format_entry(
+        "exit-node",
+        if is_active { "✅" } else { "🌿" },
+        &format!("{node_name} - {node_ip}"),
+    )
 }
 
+fn get_active_exit_node() -> String {
+    let output = Command::new("tailscale")
+        .arg("status")
+        .arg("--json")
+        .output()
+        .expect("failed to execute process");
+
+    let json: Value = serde_json::from_slice(&output.stdout).expect("failed to parse JSON");
+
+    if let Some(peers) = json.get("Peer") {
+        if let Some(peers_map) = peers.as_object() {
+            for peer in peers_map.values() {
+                if peer["Active"].as_bool() == Some(true)
+                    && peer["ExitNode"].as_bool() == Some(true)
+                {
+                    if let Some(dns_name) = peer["DNSName"].as_str() {
+                        return dns_name.trim_end_matches('.').to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    String::new()
+}
 pub fn set_exit_node(action: &str) -> bool {
     let node_name = match extract_node_name(action) {
         Some(name) => name,
