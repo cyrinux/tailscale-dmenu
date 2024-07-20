@@ -1,8 +1,8 @@
-# Tailscale Mullvad dmenu Selector
+# Network dmenu Selector
 
 ![Logo](https://github.com/user-attachments/assets/d07a6fb4-7558-4cc8-b7cd-9bb1321265c7)
 
-A simple dmenu-based selector to manage Tailscale exit nodes and custom actions. This tool allows you to quickly enable or disable Tailscale, set Tailscale exit nodes including Mullvad VPN, and execute custom actions via a dmenu interface.
+A simple dmenu-based selector to manage Tailscale exit nodes, networkmanager, iwd and custom actions. This tool allows you to quickly enable or disable Tailscale, set Tailscale exit nodes including Mullvad VPN, and execute custom actions via a dmenu interface.
 
 ## Features
 
@@ -31,8 +31,9 @@ A simple dmenu-based selector to manage Tailscale exit nodes and custom actions.
 
 ## Requirements
 
+- `fontawesomes` and/or `joypixels` fonts.
 - `pinentry-gnome3` for the wifi password prompt.
-- `dmenu`
+- `dmenu` or compatible.
 
 ## Configuration
 
@@ -42,20 +43,8 @@ The configuration file is located at `~/.config/network-dmenu/config.toml`. If i
 
 ```toml
 [[actions]]
-display = "❌ - Disable exit-node"
-cmd = "tailscale set --exit-node="
-
-[[actions]]
-display = "❌ - Disable tailscale"
-cmd = "tailscale down"
-
-[[actions]]
-display = "✅ - Enable tailscale"
-cmd = "tailscale up"
-
-[[actions]]
-display = "🌿 - Connect to the RaspberryPi"
-cmd = "tailscale set --exit-node-allow-lan-access --exit-node=raspberrypi"
+display = "😀 Example"
+cmd = "notify-send 'hello' 'world'"
 ```
 
 You can add more actions by editing this file.

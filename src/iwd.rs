@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 use crate::RealCommandRunner;
-use crate::{is_known_network, notify_connection, prompt_for_password};
+use crate::{convert_network_strength, is_known_network, notify_connection, prompt_for_password};
 use regex::Regex;
 
 use crate::WifiAction;
@@ -53,32 +53,6 @@ fn fetch_iwd_networks(interface: &str) -> Result<Option<Vec<String>>, Box<dyn st
     } else {
         Ok(None)
     }
-}
-
-fn convert_network_strength(line: &str) -> String {
-    // Define the mapping for network strength symbols
-    let strength_symbols = ["_", "▂", "▄", "▆", "█"];
-
-    // Extract the stars from the end of the line
-    let stars = line.chars().rev().take_while(|&c| c == '*').count();
-    println!("{stars}");
-
-    // Create the network manager style representation
-    let network_strength = format!(
-        "{}{}{}{}",
-        strength_symbols.get(1).unwrap_or(&"_"),
-        strength_symbols
-            .get(if stars >= 2 { 2 } else { 0 })
-            .unwrap_or(&"_"),
-        strength_symbols
-            .get(if stars >= 3 { 3 } else { 0 })
-            .unwrap_or(&"_"),
-        strength_symbols
-            .get(if stars >= 4 { 4 } else { 0 })
-            .unwrap_or(&"_"),
-    );
-
-    network_strength
 }
 
 fn parse_iwd_networks(

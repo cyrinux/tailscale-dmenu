@@ -1,6 +1,6 @@
 use crate::{
-    is_known_network, notify_connection, prompt_for_password, CommandRunner, RealCommandRunner,
-    WifiAction,
+    convert_network_strength, is_known_network, notify_connection, prompt_for_password,
+    CommandRunner, RealCommandRunner, WifiAction,
 };
 use std::io::{BufRead, BufReader};
 use std::process::Command;
@@ -18,8 +18,10 @@ fn get_nm_wifi_networks_with_command_runner(
         let has_in_use = lines.iter().any(|line| line.starts_with('*'));
 
         if !has_in_use {
-            let rescan_output = command_runner
-                .run_command("nmcli", &["dev", "wifi", "list", "--rescan", "auto"])?;
+            let rescan_output = command_runner.run_command(
+                "nmcli",
+                &["--colors", "no", "dev", "wifi", "list", "--rescan", "auto"],
+            )?;
 
             if rescan_output.status.success() {
                 if let Some(rescan_lines) = fetch_wifi_lines(command_runner)? {
@@ -37,8 +39,18 @@ fn get_nm_wifi_networks_with_command_runner(
 fn fetch_wifi_lines(
     command_runner: &dyn CommandRunner,
 ) -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
-    let output =
-        command_runner.run_command("nmcli", &["-t", "-f", "IN-USE,SSID,BARS", "device", "wifi"])?;
+    let output = command_runner.run_command(
+        "nmcli",
+        &[
+            "--colors",
+            "no",
+            "-t",
+            "-f",
+            "IN-USE,SSID,BARS",
+            "device",
+            "wifi",
+        ],
+    )?;
 
     if output.status.success() {
         let reader = BufReader::new(output.stdout.as_slice());
@@ -54,13 +66,13 @@ fn parse_wifi_lines(actions: &mut Vec<WifiAction>, wifi_lines: Vec<String>) {
         if parts.len() == 3 {
             let in_use = parts[0].trim();
             let ssid = parts[1].trim();
-            let bars = parts[2].trim();
+            let signal = parts[2].trim();
             if !ssid.is_empty() {
                 let display = format!(
                     "{} {} {}",
                     if in_use == "*" { "🌐" } else { "📶" },
                     ssid,
-                    bars
+                    convert_network_strength(signal)
                 );
                 actions.push(WifiAction::Network(display));
             }

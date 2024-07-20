@@ -480,3 +480,28 @@ pub fn is_tailscale_enabled() -> Result<bool, Box<dyn std::error::Error>> {
     }
     Ok(false)
 }
+
+pub fn convert_network_strength(line: &str) -> String {
+    // Define the mapping for network strength symbols
+    let strength_symbols = ["_", "▂", "▄", "▆", "█"];
+
+    // Extract the stars from the end of the line
+    let stars = line.chars().rev().take_while(|&c| c == '*').count();
+
+    // Create the network manager style representation
+    let network_strength = format!(
+        "{}{}{}{}",
+        strength_symbols.get(1).unwrap_or(&"_"),
+        strength_symbols
+            .get(if stars >= 2 { 2 } else { 0 })
+            .unwrap_or(&"_"),
+        strength_symbols
+            .get(if stars >= 3 { 3 } else { 0 })
+            .unwrap_or(&"_"),
+        strength_symbols
+            .get(if stars >= 4 { 4 } else { 0 })
+            .unwrap_or(&"_"),
+    );
+
+    network_strength
+}
