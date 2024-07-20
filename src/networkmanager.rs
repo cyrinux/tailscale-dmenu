@@ -80,10 +80,6 @@ fn parse_wifi_lines(actions: &mut Vec<WifiAction>, wifi_lines: Vec<String>) {
     }
 }
 
-pub fn connect_to_nm_wifi(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    connect_to_nm_wifi_with_command_runner(action, &RealCommandRunner)
-}
-
 fn connect_to_nm_wifi_with_command_runner(
     action: &str,
     command_runner: &dyn CommandRunner,
@@ -149,4 +145,8 @@ pub fn is_nm_connected(
         }
     }
     Ok(false)
+}
+
+pub fn connect_to_nm_wifi(action: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    connect_to_nm_wifi_with_command_runner(action, &RealCommandRunner)
 }

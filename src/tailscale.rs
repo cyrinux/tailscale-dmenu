@@ -1,11 +1,21 @@
 use crate::format_entry;
+use crate::is_command_installed;
 use notify_rust::Notification;
 use regex::Regex;
 use reqwest::blocking::get;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::error::Error;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+
+#[derive(Debug)]
+pub enum TailscaleAction {
+    DisableExitNode,
+    SetEnable(bool),
+    SetExitNode(String),
+    SetShields(bool),
+}
 
 pub fn get_mullvad_actions() -> Vec<String> {
     get_mullvad_actions_with_command_runner(&RealCommandRunner)
@@ -107,7 +117,8 @@ fn get_active_exit_node() -> String {
 
     String::new()
 }
-pub fn set_exit_node(action: &str) -> bool {
+
+fn set_exit_node(action: &str) -> bool {
     let node_name = match extract_node_name(action) {
         Some(name) => name,
         None => return false,
@@ -233,4 +244,54 @@ impl CommandRunner for RealCommandRunner {
     ) -> Result<std::process::Output, std::io::Error> {
         Command::new(command).args(args).output()
     }
+}
+
+pub fn handle_tailscale_action(action: &TailscaleAction) -> Result<bool, Box<dyn Error>> {
+    if !is_command_installed("tailscale") {
+        return Ok(false);
+    }
+
+    match action {
+        TailscaleAction::DisableExitNode => {
+            let status = Command::new("tailscale")
+                .arg("set")
+                .arg("--exit-node=")
+                .status()?;
+            check_mullvad()?;
+            Ok(status.success())
+        }
+        TailscaleAction::SetEnable(enable) => {
+            let status = Command::new("tailscale")
+                .arg(if *enable { "up" } else { "down" })
+                .status()?;
+            Ok(status.success())
+        }
+        TailscaleAction::SetExitNode(node) => {
+            if set_exit_node(node) {
+                check_mullvad()?;
+                Ok(true)
+            } else {
+                check_mullvad()?;
+                Ok(false)
+            }
+        }
+        TailscaleAction::SetShields(enable) => {
+            let status = Command::new("tailscale")
+                .arg("set")
+                .arg("--shields-up")
+                .arg(if *enable { "true" } else { "false" })
+                .status()?;
+            Ok(status.success())
+        }
+    }
+}
+
+pub fn is_tailscale_enabled() -> Result<bool, Box<dyn std::error::Error>> {
+    let output = Command::new("tailscale").arg("status").output()?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Ok(!stdout.contains("Tailscale is stopped"));
+    }
+    Ok(false)
 }

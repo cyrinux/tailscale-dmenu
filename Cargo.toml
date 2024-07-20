@@ -12,12 +12,12 @@ homepage = "https://github.com/cyrinux/network-dmenu"
 repository = "https://github.com/cyrinux/network-dmenu"
 
 [dependencies]
-dirs = { version = "4" }
+dirs = { version = "~5.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = { version = "0.5", features = ["default"] }
-regex = { version = "1.5", features = ["default"] }
-reqwest = { version = "0.11", features = ["blocking", "default"] }
+toml = { version = "~0.8", features = ["default"] }
+regex = { version = "~1.10", features = ["default"] }
+reqwest = { version = "~0.12", features = ["blocking", "default"] }
 notify-rust = { version = "4", features = ["default"] }
-which = { version = "4" }
+which = { version = "~6.0" }
 clap = { version = "4", features = ["derive"] }

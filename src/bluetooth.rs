@@ -2,12 +2,11 @@ use crate::format_entry;
 use regex::Regex;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Debug)]
 pub enum BluetoothAction {
-    Connect(String),
-    Disconnect,
+    ToggleConnect(String),
 }
 
 pub fn get_paired_bluetooth_devices() -> Result<Vec<BluetoothAction>, Box<dyn Error>> {
@@ -37,7 +36,7 @@ fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<
         let address = parts[1].to_string();
         let name = parts[2..].join(" ");
         let is_active = connected_devices.contains(&address);
-        Some(BluetoothAction::Connect(format_entry(
+        Some(BluetoothAction::ToggleConnect(format_entry(
             "bluetooth",
             if is_active { "✅" } else { " " },
             &format!("{name} - {address}"),
@@ -47,11 +46,29 @@ fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<
     }
 }
 
-pub fn connect_to_bluetooth_device(device: &str) -> Result<bool, Box<dyn Error>> {
+pub fn handle_bluetooth_action(
+    action: &BluetoothAction,
+    connected_devices: &[String],
+) -> Result<bool, Box<dyn Error>> {
+    match action {
+        BluetoothAction::ToggleConnect(device) => {
+            connect_to_bluetooth_device(device, connected_devices)
+        }
+    }
+}
+
+fn connect_to_bluetooth_device(
+    device: &str,
+    connected_devices: &[String],
+) -> Result<bool, Box<dyn Error>> {
     if let Some(address) = extract_device_address(device) {
+        let is_active = connected_devices.contains(&address);
+        let action = if is_active { "disconnect" } else { "connect" };
         let status = Command::new("bluetoothctl")
-            .arg("connect")
+            .arg(action)
             .arg(&address)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()?;
 
         if status.success() {
@@ -73,12 +90,7 @@ fn extract_device_address(device: &str) -> Option<String> {
         .map(|m| m.as_str().to_string())
 }
 
-pub fn disconnect_bluetooth_device() -> Result<bool, Box<dyn Error>> {
-    let status = Command::new("bluetoothctl").arg("disconnect").status()?;
-    Ok(status.success())
-}
-
-fn get_connected_devices() -> Vec<String> {
+pub fn get_connected_devices() -> Vec<String> {
     let output = Command::new("bluetoothctl")
         .arg("info")
         .output()

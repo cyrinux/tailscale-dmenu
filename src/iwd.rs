@@ -1,10 +1,10 @@
+use crate::{
+    convert_network_strength, is_known_network, notify_connection, prompt_for_password,
+    RealCommandRunner, WifiAction,
+};
+use regex::Regex;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
-
-use crate::RealCommandRunner;
-use crate::WifiAction;
-use crate::{convert_network_strength, is_known_network, notify_connection, prompt_for_password};
-use regex::Regex;
 
 pub fn get_iwd_networks(interface: &str) -> Result<Vec<WifiAction>, Box<dyn std::error::Error>> {
     let mut actions = Vec::new();
