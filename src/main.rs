@@ -10,10 +10,15 @@ use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use which::which;
 
+mod bluetooth;
 mod iwd;
 mod mullvad;
 mod networkmanager;
 
+use bluetooth::{
+    connect_to_bluetooth_device, disconnect_bluetooth_device, get_paired_bluetooth_devices,
+    BluetoothAction,
+};
 use iwd::{connect_to_iwd_wifi, disconnect_iwd_wifi, get_iwd_networks, is_iwd_connected};
 use mullvad::{check_mullvad, get_mullvad_actions, is_exit_node_active, set_exit_node};
 use networkmanager::{
@@ -43,6 +48,7 @@ struct CustomAction {
 
 #[derive(Debug)]
 enum ActionType {
+    Bluetooth(BluetoothAction),
     Custom(CustomAction),
     System(SystemAction),
     Tailscale(TailscaleAction),
@@ -51,24 +57,24 @@ enum ActionType {
 
 #[derive(Debug)]
 enum SystemAction {
+    EditConnections,
     RfkillBlock,
     RfkillUnblock,
-    EditConnections,
 }
 
 #[derive(Debug)]
 enum TailscaleAction {
-    SetEnable(bool),
     DisableExitNode,
+    SetEnable(bool),
     SetExitNode(String),
     SetShields(bool),
 }
 
 #[derive(Debug)]
 enum WifiAction {
-    Network(String),
-    Disconnect,
     Connect,
+    Disconnect,
+    Network(String),
 }
 
 pub fn format_entry(action: &str, icon: &str, text: &str) -> String {
@@ -169,7 +175,23 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
         );
     }
 
+    if is_command_installed("bluetoothctl") {
+        actions.extend(
+            get_paired_bluetooth_devices()?
+                .into_iter()
+                .map(ActionType::Bluetooth),
+        );
+        actions.push(ActionType::Bluetooth(BluetoothAction::Disconnect));
+    }
+
     Ok(actions)
+}
+
+fn handle_bluetooth_action(action: &BluetoothAction) -> Result<bool, Box<dyn Error>> {
+    match action {
+        BluetoothAction::Connect(device) => connect_to_bluetooth_device(device),
+        BluetoothAction::Disconnect => disconnect_bluetooth_device(),
+    }
 }
 
 fn handle_custom_action(action: &CustomAction) -> Result<bool, Box<dyn Error>> {
@@ -271,6 +293,7 @@ fn set_action(wifi_interface: &str, action: ActionType) -> Result<bool, Box<dyn 
         ActionType::System(system_action) => handle_system_action(&system_action),
         ActionType::Tailscale(mullvad_action) => handle_tailscale_action(&mullvad_action),
         ActionType::Wifi(wifi_action) => handle_wifi_action(&wifi_action, wifi_interface),
+        ActionType::Bluetooth(bluetooth_action) => handle_bluetooth_action(&bluetooth_action),
     }
 }
 
@@ -341,6 +364,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         WifiAction::Disconnect => format_entry("wifi", "❌", "Disconnect"),
                         WifiAction::Connect => format_entry("wifi", "📶", "Connect"),
                     },
+                    ActionType::Bluetooth(bluetooth_action) => match bluetooth_action {
+                        BluetoothAction::Connect(device) => format_entry("bluetooth", "", device),
+                        BluetoothAction::Disconnect => {
+                            format_entry("bluetooth", "❌", "Disconnect")
+                        }
+                    },
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -393,6 +422,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     WifiAction::Network(network) => action == format_entry("wifi", "", network),
                     WifiAction::Disconnect => action == format_entry("wifi", "❌", "Disconnect"),
                     WifiAction::Connect => action == format_entry("wifi", "📶", "Connect"),
+                },
+                ActionType::Bluetooth(bluetooth_action) => match bluetooth_action {
+                    BluetoothAction::Connect(device) => {
+                        action == format_entry("bluetooth", "", device)
+                    }
+                    BluetoothAction::Disconnect => {
+                        action == format_entry("bluetooth", "❌", "Disconnect")
+                    }
                 },
             })
             .ok_or("Selected action not found")?;
