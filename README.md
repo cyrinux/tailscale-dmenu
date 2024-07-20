@@ -2,15 +2,17 @@
 
 ![Logo](https://github.com/user-attachments/assets/d07a6fb4-7558-4cc8-b7cd-9bb1321265c7)
 
-A simple dmenu-based selector to manage Tailscale exit nodes, networkmanager, iwd and custom actions. This tool allows you to quickly enable or disable Tailscale, set Tailscale exit nodes including Mullvad VPN, and execute custom actions via a dmenu interface.
+A simple dmenu-based selector to manage Tailscale exit nodes, networkmanager, iwd and custom actions. This tool allows you to quickly enable or disable Tailscale, set Tailscale exit nodes including Mullvad VPN, and execute custom actions and more via a dmenu interface.
 
 ## Features
 
 - Enable or disable Tailscale
 - Set Tailscale exit nodes
-- Execute custom actions
-- Display country flags for exit nodes
+- Set mullvad exit nodes
 - Customizable actions via a configuration file
+- Bluetooth connect and disconnect to known devices
+- Connect to wifi devices
+- Execute custom actions
 
 ## Installation
 
@@ -34,6 +36,8 @@ A simple dmenu-based selector to manage Tailscale exit nodes, networkmanager, iw
 - `fontawesomes` and/or `joypixels` fonts.
 - `pinentry-gnome3` for the wifi password prompt.
 - `dmenu` or compatible.
+- `nmcli` or just `iwd`, optional, for wifi.
+- `bluetoothctl`, optional, for bluetooth.
 
 ## Configuration
 
