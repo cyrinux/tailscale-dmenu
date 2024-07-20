@@ -39,8 +39,8 @@ fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<
         let is_active = connected_devices.contains(&address);
         Some(BluetoothAction::Connect(format_entry(
             "bluetooth",
-            if is_active { "✅" } else { "" },
-            &format!(" {name} - {address}"),
+            if is_active { "✅" } else { " " },
+            &format!("{name} - {address}"),
         )))
     } else {
         None
