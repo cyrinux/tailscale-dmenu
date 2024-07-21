@@ -1,23 +1,25 @@
+use crate::command::CommandRunner;
 use clap::Parser;
 use dirs::config_dir;
 use notify_rust::Notification;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
-use which::which;
+use std::process::{Command, Stdio};
 
 mod bluetooth;
+mod command;
 mod iwd;
 mod networkmanager;
 mod tailscale;
+mod utils;
 
 use bluetooth::{
     get_connected_devices, get_paired_bluetooth_devices, handle_bluetooth_action, BluetoothAction,
 };
+use command::{is_command_installed, RealCommandRunner};
 use iwd::{connect_to_iwd_wifi, disconnect_iwd_wifi, get_iwd_networks, is_iwd_connected};
 use networkmanager::{
     connect_to_nm_wifi, disconnect_nm_wifi, get_nm_wifi_networks, is_nm_connected,
@@ -107,7 +109,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         panic!("pinentry-gnome3 or dmenu command missing");
     }
 
-    let actions = get_actions(&args)?;
+    let command_runner = RealCommandRunner;
+    let actions = get_actions(&args, &command_runner)?;
     let action = {
         let mut child = Command::new(&config.dmenu_cmd)
             .args(config.dmenu_args.split_whitespace())
@@ -233,9 +236,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
             .ok_or("Selected action not found")?;
 
-        let connected_devices = get_connected_devices();
+        let connected_devices = get_connected_devices(&command_runner)?;
 
-        set_action(&args.wifi_interface, selected_action, &connected_devices)?;
+        set_action(
+            &args.wifi_interface,
+            selected_action,
+            &connected_devices,
+            &command_runner,
+        )?;
     }
 
     #[cfg(debug_assertions)]
@@ -246,12 +254,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_config_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn get_config_path() -> Result<PathBuf, Box<dyn Error>> {
     let config_dir = config_dir().ok_or("Failed to find config directory")?;
     Ok(config_dir.join("network-dmenu").join("config.toml"))
 }
 
-fn create_default_config_if_missing() -> Result<(), Box<dyn std::error::Error>> {
+fn create_default_config_if_missing() -> Result<(), Box<dyn Error>> {
     let config_path = get_config_path()?;
 
     if !config_path.exists() {
@@ -264,14 +272,17 @@ fn create_default_config_if_missing() -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
+fn get_config() -> Result<Config, Box<dyn Error>> {
     let config_path = get_config_path()?;
     let config_content = fs::read_to_string(config_path)?;
     let config = toml::from_str(&config_content)?;
     Ok(config)
 }
 
-fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
+fn get_actions(
+    args: &Args,
+    command_runner: &dyn CommandRunner,
+) -> Result<Vec<ActionType>, Box<dyn Error>> {
     let config = get_config()?;
     let mut actions = config
         .actions
@@ -279,29 +290,36 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
         .map(ActionType::Custom)
         .collect::<Vec<_>>();
 
-    if !args.no_tailscale && is_command_installed("tailscale") && is_exit_node_active()? {
+    if !args.no_tailscale
+        && is_command_installed("tailscale")
+        && is_exit_node_active(command_runner)?
+    {
         actions.push(ActionType::Tailscale(TailscaleAction::DisableExitNode));
     }
 
     if !args.no_wifi && is_command_installed("nmcli") {
-        actions.extend(get_nm_wifi_networks()?.into_iter().map(ActionType::Wifi));
+        actions.extend(
+            get_nm_wifi_networks(command_runner)?
+                .into_iter()
+                .map(ActionType::Wifi),
+        );
     } else if !args.no_wifi && is_command_installed("iwctl") {
         actions.extend(
-            get_iwd_networks(&args.wifi_interface)?
+            get_iwd_networks(&args.wifi_interface, command_runner)?
                 .into_iter()
                 .map(ActionType::Wifi),
         );
     }
 
     if !args.no_wifi && is_command_installed("nmcli") {
-        if is_nm_connected(&RealCommandRunner, &args.wifi_interface)? {
+        if is_nm_connected(command_runner, &args.wifi_interface)? {
             actions.push(ActionType::Wifi(WifiAction::Disconnect));
         } else {
             actions.push(ActionType::Wifi(WifiAction::Connect));
         }
     } else if !args.no_wifi
         && is_command_installed("iwctl")
-        && is_iwd_connected(&args.wifi_interface)?
+        && is_iwd_connected(&args.wifi_interface, command_runner)?
     {
         actions.push(ActionType::Wifi(WifiAction::Disconnect));
     }
@@ -317,12 +335,12 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
 
     if !args.no_tailscale && is_command_installed("tailscale") {
         actions.push(ActionType::Tailscale(TailscaleAction::SetEnable(
-            !is_tailscale_enabled()?,
+            !is_tailscale_enabled(command_runner)?,
         )));
         actions.push(ActionType::Tailscale(TailscaleAction::SetShields(false)));
         actions.push(ActionType::Tailscale(TailscaleAction::SetShields(true)));
         actions.extend(
-            get_mullvad_actions()
+            get_mullvad_actions(command_runner)
                 .into_iter()
                 .map(|m| ActionType::Tailscale(TailscaleAction::SetExitNode(m))),
         );
@@ -330,7 +348,7 @@ fn get_actions(args: &Args) -> Result<Vec<ActionType>, Box<dyn Error>> {
 
     if !args.no_bluetooth && is_command_installed("bluetoothctl") {
         actions.extend(
-            get_paired_bluetooth_devices()?
+            get_paired_bluetooth_devices(command_runner)?
                 .into_iter()
                 .map(ActionType::Bluetooth),
         );
@@ -361,13 +379,17 @@ fn handle_system_action(action: &SystemAction) -> Result<bool, Box<dyn Error>> {
     }
 }
 
-fn handle_wifi_action(action: &WifiAction, wifi_interface: &str) -> Result<bool, Box<dyn Error>> {
+fn handle_wifi_action(
+    action: &WifiAction,
+    wifi_interface: &str,
+    command_runner: &dyn CommandRunner,
+) -> Result<bool, Box<dyn Error>> {
     match action {
         WifiAction::Disconnect => {
             let status = if is_command_installed("nmcli") {
-                disconnect_nm_wifi(wifi_interface)?
+                disconnect_nm_wifi(wifi_interface, command_runner)?
             } else {
-                disconnect_iwd_wifi(wifi_interface)?
+                disconnect_iwd_wifi(wifi_interface, command_runner)?
             };
             Ok(status)
         }
@@ -382,9 +404,9 @@ fn handle_wifi_action(action: &WifiAction, wifi_interface: &str) -> Result<bool,
         }
         WifiAction::Network(network) => {
             if is_command_installed("nmcli") {
-                connect_to_nm_wifi(network)?;
+                connect_to_nm_wifi(network, command_runner)?;
             } else if is_command_installed("iwctl") {
-                connect_to_iwd_wifi(wifi_interface, network)?;
+                connect_to_iwd_wifi(wifi_interface, network, command_runner)?;
             }
             check_mullvad()?;
             Ok(true)
@@ -396,106 +418,27 @@ fn set_action(
     wifi_interface: &str,
     action: ActionType,
     connected_devices: &[String],
+    command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
     match action {
         ActionType::Custom(custom_action) => handle_custom_action(&custom_action),
         ActionType::System(system_action) => handle_system_action(&system_action),
-        ActionType::Tailscale(mullvad_action) => handle_tailscale_action(&mullvad_action),
-        ActionType::Wifi(wifi_action) => handle_wifi_action(&wifi_action, wifi_interface),
+        ActionType::Tailscale(mullvad_action) => {
+            handle_tailscale_action(&mullvad_action, command_runner)
+        }
+        ActionType::Wifi(wifi_action) => {
+            handle_wifi_action(&wifi_action, wifi_interface, command_runner)
+        }
         ActionType::Bluetooth(bluetooth_action) => {
-            handle_bluetooth_action(&bluetooth_action, connected_devices)
+            handle_bluetooth_action(&bluetooth_action, connected_devices, command_runner)
         }
     }
 }
 
-fn notify_connection(ssid: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn notify_connection(ssid: &str) -> Result<(), Box<dyn Error>> {
     Notification::new()
         .summary("Wi-Fi")
         .body(&format!("Connected to {ssid}"))
         .show()?;
     Ok(())
-}
-
-pub trait CommandRunner {
-    fn run_command(&self, command: &str, args: &[&str]) -> Result<Output, std::io::Error>;
-}
-
-pub struct RealCommandRunner;
-
-impl CommandRunner for RealCommandRunner {
-    fn run_command(&self, command: &str, args: &[&str]) -> Result<Output, std::io::Error> {
-        Command::new(command).args(args).output()
-    }
-}
-
-pub fn prompt_for_password(
-    command_runner: &dyn CommandRunner,
-    ssid: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let output = command_runner.run_command(
-        "sh",
-        &[
-            "-c",
-            &format!("echo 'SETDESC Enter '{ssid}' password\nGETPIN' | pinentry-gnome3"),
-        ],
-    )?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let password_line = stdout
-        .lines()
-        .find(|line| line.starts_with("D "))
-        .ok_or("Password not found")?;
-    let password = password_line.trim_start_matches("D ").trim().to_string();
-
-    Ok(password)
-}
-
-pub fn is_known_network(ssid: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let output = Command::new("iwctl")
-        .arg("known-networks")
-        .arg("list")
-        .output()?;
-
-    if output.status.success() {
-        let reader = BufReader::new(output.stdout.as_slice());
-        let ssid_pattern = format!(r"\b{}\b", regex::escape(ssid));
-        let re = Regex::new(&ssid_pattern)?;
-
-        for line in reader.lines() {
-            let line = line?;
-            if re.is_match(&line) {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
-}
-
-fn convert_network_strength(line: &str) -> String {
-    // Define the mapping for network strength symbols
-    let strength_symbols = ["_", "▂", "▄", "▆", "█"];
-
-    // Extract the stars from the end of the line
-    let stars = line.chars().rev().take_while(|&c| c == '*').count();
-
-    // Create the network manager style representation
-    let network_strength = format!(
-        "{}{}{}{}",
-        strength_symbols.get(1).unwrap_or(&"_"),
-        strength_symbols
-            .get(if stars >= 2 { 2 } else { 0 })
-            .unwrap_or(&"_"),
-        strength_symbols
-            .get(if stars >= 3 { 3 } else { 0 })
-            .unwrap_or(&"_"),
-        strength_symbols
-            .get(if stars >= 4 { 4 } else { 0 })
-            .unwrap_or(&"_"),
-    );
-
-    network_strength
-}
-
-fn is_command_installed(cmd: &str) -> bool {
-    which(cmd).is_ok()
 }

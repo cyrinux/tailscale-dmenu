@@ -1,13 +1,11 @@
+use crate::command::{execute_command, is_command_installed, read_output_lines, CommandRunner};
 use crate::format_entry;
-use crate::is_command_installed;
 use notify_rust::Notification;
 use regex::Regex;
 use reqwest::blocking::get;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
 
 #[derive(Debug)]
 pub enum TailscaleAction {
@@ -17,42 +15,27 @@ pub enum TailscaleAction {
     SetShields(bool),
 }
 
-pub fn get_mullvad_actions() -> Vec<String> {
-    get_mullvad_actions_with_command_runner(&RealCommandRunner)
-}
-
-pub fn check_mullvad() -> Result<(), Box<dyn std::error::Error>> {
-    let response = get("https://am.i.mullvad.net/connected")?.text()?;
-    Notification::new()
-        .summary("Connected Status")
-        .body(response.trim())
-        .show()?;
-    Ok(())
-}
-
-fn get_mullvad_actions_with_command_runner(command_runner: &dyn CommandRunner) -> Vec<String> {
+pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
     let output = command_runner
         .run_command("tailscale", &["exit-node", "list"])
         .expect("Failed to execute command");
 
-    let active_exit_node = get_active_exit_node();
+    let active_exit_node = get_active_exit_node(command_runner);
 
     if output.status.success() {
-        let reader = BufReader::new(output.stdout.as_slice());
+        let reader = read_output_lines(&output).unwrap_or_default();
         let regex = Regex::new(r"\s{2,}").unwrap();
 
         let mut actions: Vec<String> = reader
-            .lines()
-            .map_while(Result::ok)
+            .into_iter()
             .filter(|line| line.contains("mullvad.ts.net"))
             .map(|line| parse_mullvad_line(&line, &regex, &active_exit_node))
             .collect();
 
-        let reader = BufReader::new(output.stdout.as_slice());
+        let reader = read_output_lines(&output).unwrap_or_default();
         actions.extend(
             reader
-                .lines()
-                .map_while(Result::ok)
+                .into_iter()
                 .filter(|line| line.contains("ts.net") && !line.contains("mullvad.ts.net"))
                 .map(|line| parse_exit_node_line(&line, &regex, &active_exit_node)),
         );
@@ -68,35 +51,48 @@ fn get_mullvad_actions_with_command_runner(command_runner: &dyn CommandRunner) -
     }
 }
 
+pub fn check_mullvad() -> Result<(), Box<dyn Error>> {
+    let response = get("https://am.i.mullvad.net/connected")?.text()?;
+    Notification::new()
+        .summary("Connected Status")
+        .body(response.trim())
+        .show()?;
+    Ok(())
+}
+
 fn parse_mullvad_line(line: &str, regex: &Regex, active_exit_node: &str) -> String {
     let parts: Vec<&str> = regex.split(line).collect();
-    let country = parts.get(2).unwrap_or(&"");
-    let node_name = parts.get(1).unwrap_or(&"");
-    let is_active = active_exit_node == *node_name;
+    let node_ip = parts.first().unwrap_or(&"").trim();
+    let node_name = parts.get(1).unwrap_or(&"").trim();
+    let country = parts.get(2).unwrap_or(&"").trim();
+    let is_active = active_exit_node == node_name;
     format_entry(
         "mullvad",
         if is_active { "✅" } else { get_flag(country) },
-        &format!("{country} - {node_name}"),
+        &format!("{country:<15} - {node_ip:<16} {node_name}"),
     )
+}
+
+fn extract_short_name(node_name: &str) -> &str {
+    node_name.split('.').next().unwrap_or(node_name)
 }
 
 fn parse_exit_node_line(line: &str, regex: &Regex, active_exit_node: &str) -> String {
     let parts: Vec<&str> = regex.split(line).collect();
     let node_ip = parts.first().unwrap_or(&"").trim();
-    let node_name = parts.get(1).unwrap_or(&"");
-    let is_active = active_exit_node == *node_name;
+    let node_name = parts.get(1).unwrap_or(&"").trim();
+    let node_short_name = extract_short_name(node_name);
+    let is_active = active_exit_node == node_name;
     format_entry(
         "exit-node",
         if is_active { "✅" } else { "🌿" },
-        &format!("{node_name} - {node_ip}"),
+        &format!("{node_short_name:<15} - {node_ip:<16} {node_name}"),
     )
 }
 
-fn get_active_exit_node() -> String {
-    let output = Command::new("tailscale")
-        .arg("status")
-        .arg("--json")
-        .output()
+fn get_active_exit_node(command_runner: &dyn CommandRunner) -> String {
+    let output = command_runner
+        .run_command("tailscale", &["status", "--json"])
         .expect("failed to execute process");
 
     let json: Value = serde_json::from_slice(&output.stdout).expect("failed to parse JSON");
@@ -119,10 +115,13 @@ fn get_active_exit_node() -> String {
 }
 
 fn set_exit_node(action: &str) -> bool {
-    let node_name = match extract_node_name(action) {
-        Some(name) => name,
+    let node_ip = match extract_node_ip(action) {
+        Some(ip) => ip,
         None => return false,
     };
+
+    #[cfg(debug_assertions)]
+    println!("Exit-node ip address: {node_ip}");
 
     if !execute_command("tailscale", &["up"]) {
         return false;
@@ -133,27 +132,18 @@ fn set_exit_node(action: &str) -> bool {
         &[
             "set",
             "--exit-node",
-            node_name,
+            node_ip,
             "--exit-node-allow-lan-access=true",
         ],
     )
 }
 
-fn extract_node_name(action: &str) -> Option<&str> {
-    let regex = Regex::new(r" ([\w_.-]+)$").ok()?;
-    regex
+fn extract_node_ip(action: &str) -> Option<&str> {
+    Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
+        .ok()?
         .captures(action)
-        .and_then(|caps| caps.get(1))
+        .and_then(|caps| caps.get(0))
         .map(|m| m.as_str())
-}
-
-fn execute_command(command: &str, args: &[&str]) -> bool {
-    Command::new(command)
-        .args(args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_or(false, |status| status.success())
 }
 
 fn get_flag(country: &str) -> &'static str {
@@ -211,13 +201,12 @@ fn get_flag(country: &str) -> &'static str {
     country_flags.get(country).unwrap_or(&"❓")
 }
 
-pub fn is_exit_node_active() -> Result<bool, Box<dyn std::error::Error>> {
-    let output = Command::new("tailscale").arg("status").output()?;
+pub fn is_exit_node_active(command_runner: &dyn CommandRunner) -> Result<bool, Box<dyn Error>> {
+    let output = command_runner.run_command("tailscale", &["status"])?;
 
     if output.status.success() {
-        let reader = BufReader::new(output.stdout.as_slice());
-        for line in reader.lines() {
-            let line = line?;
+        let reader = read_output_lines(&output)?;
+        for line in reader {
             if line.contains("active; exit node;") {
                 return Ok(true);
             }
@@ -226,44 +215,26 @@ pub fn is_exit_node_active() -> Result<bool, Box<dyn std::error::Error>> {
     Ok(false)
 }
 
-pub trait CommandRunner {
-    fn run_command(
-        &self,
-        command: &str,
-        args: &[&str],
-    ) -> Result<std::process::Output, std::io::Error>;
-}
-
-struct RealCommandRunner;
-
-impl CommandRunner for RealCommandRunner {
-    fn run_command(
-        &self,
-        command: &str,
-        args: &[&str],
-    ) -> Result<std::process::Output, std::io::Error> {
-        Command::new(command).args(args).output()
-    }
-}
-
-pub fn handle_tailscale_action(action: &TailscaleAction) -> Result<bool, Box<dyn Error>> {
+pub fn handle_tailscale_action(
+    action: &TailscaleAction,
+    command_runner: &dyn CommandRunner,
+) -> Result<bool, Box<dyn Error>> {
     if !is_command_installed("tailscale") {
         return Ok(false);
     }
 
     match action {
         TailscaleAction::DisableExitNode => {
-            let status = Command::new("tailscale")
-                .arg("set")
-                .arg("--exit-node=")
-                .status()?;
+            let status = command_runner
+                .run_command("tailscale", &["set", "--exit-node="])?
+                .status;
             check_mullvad()?;
             Ok(status.success())
         }
         TailscaleAction::SetEnable(enable) => {
-            let status = Command::new("tailscale")
-                .arg(if *enable { "up" } else { "down" })
-                .status()?;
+            let status = command_runner
+                .run_command("tailscale", &[if *enable { "up" } else { "down" }])?
+                .status;
             Ok(status.success())
         }
         TailscaleAction::SetExitNode(node) => {
@@ -276,18 +247,23 @@ pub fn handle_tailscale_action(action: &TailscaleAction) -> Result<bool, Box<dyn
             }
         }
         TailscaleAction::SetShields(enable) => {
-            let status = Command::new("tailscale")
-                .arg("set")
-                .arg("--shields-up")
-                .arg(if *enable { "true" } else { "false" })
-                .status()?;
+            let status = command_runner
+                .run_command(
+                    "tailscale",
+                    &[
+                        "set",
+                        "--shields-up",
+                        if *enable { "true" } else { "false" },
+                    ],
+                )?
+                .status;
             Ok(status.success())
         }
     }
 }
 
-pub fn is_tailscale_enabled() -> Result<bool, Box<dyn std::error::Error>> {
-    let output = Command::new("tailscale").arg("status").output()?;
+pub fn is_tailscale_enabled(command_runner: &dyn CommandRunner) -> Result<bool, Box<dyn Error>> {
+    let output = command_runner.run_command("tailscale", &["status"])?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);

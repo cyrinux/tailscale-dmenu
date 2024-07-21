@@ -1,26 +1,22 @@
+use crate::command::{read_output_lines, CommandRunner};
 use crate::format_entry;
 use regex::Regex;
 use std::error::Error;
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::process::Output;
 
 #[derive(Debug)]
 pub enum BluetoothAction {
     ToggleConnect(String),
 }
 
-pub fn get_paired_bluetooth_devices() -> Result<Vec<BluetoothAction>, Box<dyn Error>> {
-    let output = Command::new("bluetoothctl").arg("devices").output()?;
-
-    let connected_devices = get_connected_devices();
+pub fn get_paired_bluetooth_devices(
+    command_runner: &dyn CommandRunner,
+) -> Result<Vec<BluetoothAction>, Box<dyn Error>> {
+    let output = command_runner.run_command("bluetoothctl", &["devices"])?;
+    let connected_devices = get_connected_devices(command_runner)?;
 
     if output.status.success() {
-        let reader = BufReader::new(output.stdout.as_slice());
-        let devices: Vec<BluetoothAction> = reader
-            .lines()
-            .map_while(Result::ok)
-            .filter_map(|line| parse_bluetooth_device(line, &connected_devices))
-            .collect();
+        let devices = parse_bluetooth_devices(&output, &connected_devices)?;
         Ok(devices)
     } else {
         Err(Box::new(std::io::Error::new(
@@ -28,6 +24,18 @@ pub fn get_paired_bluetooth_devices() -> Result<Vec<BluetoothAction>, Box<dyn Er
             "Failed to fetch paired Bluetooth devices",
         )))
     }
+}
+
+fn parse_bluetooth_devices(
+    output: &Output,
+    connected_devices: &[String],
+) -> Result<Vec<BluetoothAction>, Box<dyn Error>> {
+    let reader = read_output_lines(output)?;
+    let devices = reader
+        .into_iter()
+        .filter_map(|line| parse_bluetooth_device(line, connected_devices))
+        .collect();
+    Ok(devices)
 }
 
 fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<BluetoothAction> {
@@ -39,7 +47,7 @@ fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<
         Some(BluetoothAction::ToggleConnect(format_entry(
             "bluetooth",
             if is_active { "✅" } else { " " },
-            &format!("{name} - {address}"),
+            &format!("{name:<25} - {address}"),
         )))
     } else {
         None
@@ -49,10 +57,11 @@ fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<
 pub fn handle_bluetooth_action(
     action: &BluetoothAction,
     connected_devices: &[String],
+    command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
     match action {
         BluetoothAction::ToggleConnect(device) => {
-            connect_to_bluetooth_device(device, connected_devices)
+            connect_to_bluetooth_device(device, connected_devices, command_runner)
         }
     }
 }
@@ -60,16 +69,14 @@ pub fn handle_bluetooth_action(
 fn connect_to_bluetooth_device(
     device: &str,
     connected_devices: &[String],
+    command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
     if let Some(address) = extract_device_address(device) {
         let is_active = connected_devices.contains(&address);
         let action = if is_active { "disconnect" } else { "connect" };
-        let status = Command::new("bluetoothctl")
-            .arg(action)
-            .arg(&address)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
+        let status = command_runner
+            .run_command("bluetoothctl", &[action, &address])?
+            .status;
 
         if status.success() {
             Ok(true)
@@ -90,24 +97,15 @@ fn extract_device_address(device: &str) -> Option<String> {
         .map(|m| m.as_str().to_string())
 }
 
-pub fn get_connected_devices() -> Vec<String> {
-    let output = Command::new("bluetoothctl")
-        .arg("info")
-        .output()
-        .expect("Failed to execute bluetoothctl command");
-
-    let output_str =
-        std::str::from_utf8(&output.stdout).expect("Failed to convert output to string");
-
-    let mut mac_addresses = Vec::new();
-
-    for line in output_str.lines() {
-        if line.starts_with("Device ") {
-            if let Some(mac) = line.split_whitespace().nth(1) {
-                mac_addresses.push(mac.to_string());
-            }
-        }
-    }
-
-    mac_addresses
+pub fn get_connected_devices(
+    command_runner: &dyn CommandRunner,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let output = command_runner.run_command("bluetoothctl", &["info"])?;
+    let reader = read_output_lines(&output)?;
+    let mac_addresses = reader
+        .into_iter()
+        .filter(|line| line.starts_with("Device "))
+        .filter_map(|line| line.split_whitespace().nth(1).map(|s| s.to_string()))
+        .collect();
+    Ok(mac_addresses)
 }

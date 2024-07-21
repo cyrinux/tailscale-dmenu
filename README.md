@@ -1,3 +1,8 @@
+![](https://img.shields.io/github/issues-raw/cyrinux/network-dmenu)
+![](https://img.shields.io/github/stars/cyrinux/network-dmenu)
+![](https://img.shields.io/crates/d/network-dmenu)
+![](https://img.shields.io/crates/v/network-dmenu)
+
 # Network dmenu Selector
 
 ![Logo](https://github.com/user-attachments/assets/d07a6fb4-7558-4cc8-b7cd-9bb1321265c7)
