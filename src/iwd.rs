@@ -70,7 +70,7 @@ fn parse_iwd_networks(
             let signal = parts[2].trim();
             let display = format!(
                 "{} {} {}",
-                if connected { "🌐" } else { "📶" },
+                if connected { "✅" } else { "📶" },
                 ssid,
                 convert_network_strength(signal)
             );
