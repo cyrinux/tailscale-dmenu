@@ -30,3 +30,4 @@ clap = { version = "4", features = [
 ], default-features = false }
 ipaddress = "~0.1"
 shlex = "~1.1"
+escape_string = "0.1.2"

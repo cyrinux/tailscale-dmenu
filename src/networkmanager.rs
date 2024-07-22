@@ -115,13 +115,12 @@ pub fn connect_to_nm_wifi(
         ssid, security
     );
 
-    let escaped_ssid = quote(ssid).to_string();
-
-    if is_known_network(&escaped_ssid, command_runner)? || security.is_empty() {
-        attempt_connection(&escaped_ssid, None, command_runner)
+    if is_known_network(ssid, command_runner)? || security.is_empty() {
+        attempt_connection(ssid, None, command_runner)
     } else {
-        let password = prompt_for_password(command_runner, &escaped_ssid)?;
-        attempt_connection(&escaped_ssid, Some(password), command_runner)
+        let password = prompt_for_password(command_runner, ssid)?;
+        println!("{password}");
+        attempt_connection(ssid, Some(password), command_runner)
     }
 }
 
@@ -132,7 +131,7 @@ fn attempt_connection(
 ) -> Result<bool, Box<dyn Error>> {
     let command = match password {
         Some(ref pwd) => vec!["device", "wifi", "connect", ssid, "password", pwd],
-        None => vec!["device", "wifi", "connect", "{ssid}"],
+        None => vec!["device", "wifi", "connect", ssid],
     };
 
     let status = command_runner.run_command("nmcli", &command)?.status;

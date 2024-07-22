@@ -32,6 +32,7 @@ pub fn prompt_for_password(
         ],
     )?;
     let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("{stdout:?}");
     let password_line = stdout
         .lines()
         .find(|line| line.starts_with("D "))
