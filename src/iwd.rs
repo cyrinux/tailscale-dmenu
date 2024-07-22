@@ -101,7 +101,7 @@ pub fn connect_to_iwd_wifi(
     if is_known_network(ssid, command_runner)? || security.is_empty() {
         attempt_connection(interface, ssid, None, command_runner)
     } else {
-        let password = prompt_for_password(command_runner, ssid)?;
+        let password = prompt_for_password(ssid)?;
         attempt_connection(interface, ssid, Some(&password), command_runner)
     }
 }

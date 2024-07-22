@@ -3,7 +3,6 @@ use regex::Regex;
 use crate::command::{read_output_lines, CommandRunner};
 use crate::utils::{convert_network_strength, prompt_for_password};
 use crate::{notify_connection, WifiAction};
-use shlex::quote;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 
@@ -110,16 +109,12 @@ pub fn connect_to_nm_wifi(
     let security = parts[0].trim();
 
     #[cfg(debug_assertions)]
-    println!(
-        "Connecting to Wi-Fi network: {} with security {}",
-        ssid, security
-    );
+    println!("Connecting to Wi-Fi network: {ssid} with security {security}");
 
     if is_known_network(ssid, command_runner)? || security.is_empty() {
         attempt_connection(ssid, None, command_runner)
     } else {
-        let password = prompt_for_password(command_runner, ssid)?;
-        println!("{password}");
+        let password = prompt_for_password(ssid)?;
         attempt_connection(ssid, Some(password), command_runner)
     }
 }

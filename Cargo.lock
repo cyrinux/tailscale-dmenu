@@ -532,12 +532,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "escape_string"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59e867569975c88fdf73833a30bd6e0978aa6ab6bd784b648fcece07450951ba"
-
-[[package]]
 name = "event-listener"
 version = "5.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -989,18 +983,16 @@ dependencies = [
 
 [[package]]
 name = "network-dmenu"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "clap",
  "dirs",
- "escape_string",
  "ipaddress",
  "notify-rust",
  "regex",
  "reqwest",
  "serde",
  "serde_json",
- "shlex",
  "toml",
  "which",
 ]
@@ -1595,12 +1587,6 @@ dependencies = [
  "cpufeatures",
  "digest",
 ]
-
-[[package]]
-name = "shlex"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 
 [[package]]
 name = "signal-hook-registry"

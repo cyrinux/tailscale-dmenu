@@ -1,5 +1,5 @@
-use crate::command::CommandRunner;
-use std::error::Error;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 pub fn convert_network_strength(line: &str) -> String {
     let strength_symbols = ["_", "▂", "▄", "▆", "█"];
@@ -20,23 +20,25 @@ pub fn convert_network_strength(line: &str) -> String {
     network_strength
 }
 
-pub fn prompt_for_password(
-    command_runner: &dyn CommandRunner,
-    ssid: &str,
-) -> Result<String, Box<dyn Error>> {
-    let output = command_runner.run_command(
-        "sh",
-        &[
-            "-c",
-            &format!("echo 'SETDESC Enter '{ssid}' password\nGETPIN' | pinentry-gnome3"),
-        ],
-    )?;
+pub fn prompt_for_password(ssid: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut child = Command::new("pinentry-gnome3")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    {
+        let stdin = child.stdin.as_mut().ok_or("Failed to open stdin")?;
+        write!(stdin, "SETDESC Enter {ssid} password\nGETPIN\n")?;
+    }
+
+    let output = child.wait_with_output()?;
+
     let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("{stdout:?}");
     let password_line = stdout
         .lines()
         .find(|line| line.starts_with("D "))
         .ok_or("Password not found")?;
     let password = password_line.trim_start_matches("D ").trim().to_string();
+
     Ok(password)
 }
