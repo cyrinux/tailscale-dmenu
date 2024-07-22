@@ -3,6 +3,7 @@ use regex::Regex;
 use crate::command::{read_output_lines, CommandRunner};
 use crate::utils::{convert_network_strength, prompt_for_password};
 use crate::{notify_connection, WifiAction};
+use shlex::quote;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 
@@ -83,29 +84,44 @@ pub fn connect_to_nm_wifi(
     action: &str,
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
-    let parts: Vec<&str> = action.split('\t').collect();
+    // Find the position of the first emoji character (either ✅ or 📶)
+    let emoji_pos = action
+        .char_indices()
+        .find(|(_, c)| *c == '✅' || *c == '📶')
+        .map(|(i, _)| i)
+        .ok_or("Emoji not found in action")?;
 
-    if parts.len() < 3 {
+    // Find the position of the first tab character after the emoji
+    let tab_pos = action[emoji_pos..]
+        .char_indices()
+        .find(|(_, c)| *c == '\t')
+        .map(|(i, _)| i + emoji_pos)
+        .ok_or("Tab character not found in action")?;
+
+    // Extract the SSID between the emoji and the tab
+    let ssid = action[emoji_pos + 4..tab_pos].trim(); // 4 bytes for the emoji
+
+    // Split the rest of the action to extract security information
+    let parts: Vec<&str> = action[tab_pos + 1..].split('\t').collect();
+    if parts.len() < 2 {
         return Err("Action format is incorrect".into());
     }
 
-    let ssid_part = parts[0].split_whitespace().collect::<Vec<&str>>();
-    let ssid = if ssid_part.len() > 1 {
-        ssid_part[1]
-    } else {
-        return Err("SSID not found in action".into());
-    };
-
-    let security = parts[1].trim();
+    let security = parts[0].trim();
 
     #[cfg(debug_assertions)]
-    println!("Connecting to Wi-Fi network: {ssid} with security {security}");
+    println!(
+        "Connecting to Wi-Fi network: {} with security {}",
+        ssid, security
+    );
 
-    if is_known_network(ssid, command_runner)? || security.is_empty() {
-        attempt_connection(ssid, None, command_runner)
+    let escaped_ssid = quote(ssid).to_string();
+
+    if is_known_network(&escaped_ssid, command_runner)? || security.is_empty() {
+        attempt_connection(&escaped_ssid, None, command_runner)
     } else {
-        let password = prompt_for_password(command_runner, ssid)?;
-        attempt_connection(ssid, Some(password), command_runner)
+        let password = prompt_for_password(command_runner, &escaped_ssid)?;
+        attempt_connection(&escaped_ssid, Some(password), command_runner)
     }
 }
 
@@ -115,13 +131,11 @@ fn attempt_connection(
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
     let command = match password {
-        Some(ref pwd) => format!("device wifi connect {ssid} password {pwd}"),
-        None => format!("device wifi connect {ssid}"),
+        Some(ref pwd) => vec!["device", "wifi", "connect", ssid, "password", pwd],
+        None => vec!["device", "wifi", "connect", "{ssid}"],
     };
 
-    let command_parts: Vec<&str> = command.split_whitespace().collect();
-
-    let status = command_runner.run_command("nmcli", &command_parts)?.status;
+    let status = command_runner.run_command("nmcli", &command)?.status;
 
     if status.success() {
         notify_connection(ssid)?;
@@ -174,7 +188,7 @@ pub fn is_known_network(
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
     // Run the `nmcli connection show` command
-    let output = command_runner.run_command("nmcli", &["--color", "no", "connection", "show"])?;
+    let output = command_runner.run_command("nmcli", &["--colors", "no", "connection", "show"])?;
 
     // Check if the command executed successfully
     if output.status.success() {
