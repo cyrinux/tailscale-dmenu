@@ -22,18 +22,9 @@ A simple dmenu-based selector to manage Tailscale exit nodes, networkmanager, iw
 ## Installation
 
 1. Ensure you have Rust installed. If not, you can install it from [rust-lang.org](https://www.rust-lang.org/).
-2. Clone this repository:
+2. Install
    ```sh
-   git clone https://github.com/cyrinux/network-dmenu.git
-   cd network-dmenu
-   ```
-3. Build the project:
-   ```sh
-   cargo build --release
-   ```
-4. Move the binary to a directory in your PATH:
-   ```sh
-   cp target/release/network-dmenu /usr/local/bin/
+   cargo install --locked network-dmenu
    ```
 
 ## Requirements
