@@ -5,3 +5,6 @@ list-files:
         cat $file; \
         echo; \
     done | wl-copy
+
+deny:
+    cargo deny check
