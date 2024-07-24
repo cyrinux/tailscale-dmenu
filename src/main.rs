@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     ActionType::Tailscale(mullvad_action) => match mullvad_action {
                         TailscaleAction::SetExitNode(node) => node.to_string(),
                         TailscaleAction::DisableExitNode => {
-                            format_entry("tailscale", "❌", "Disable exit node")
+                            format_entry("tailscale", "❌", "Disable exit-node")
                         }
                         TailscaleAction::SetEnable(enable) => {
                             if *enable {
@@ -202,7 +202,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ActionType::Tailscale(mullvad_action) => match mullvad_action {
                     TailscaleAction::SetExitNode(node) => action == *node,
                     TailscaleAction::DisableExitNode => {
-                        action == format_entry("tailscale", "❌", "Disable exit node")
+                        action == format_entry("tailscale", "❌", "Disable exit-node")
                     }
                     TailscaleAction::SetEnable(enable) => {
                         if *enable {

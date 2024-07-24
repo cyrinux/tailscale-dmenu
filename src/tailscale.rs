@@ -115,9 +115,8 @@ fn get_active_exit_node(command_runner: &dyn CommandRunner) -> String {
 }
 
 fn set_exit_node(action: &str) -> bool {
-    let node_ip = match extract_node_ip(action) {
-        Some(ip) => ip,
-        None => return false,
+    let Some(node_ip) = extract_node_ip(action) else {
+        return false;
     };
 
     #[cfg(debug_assertions)]
