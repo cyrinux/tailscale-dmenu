@@ -317,11 +317,12 @@ fn get_actions(
         } else {
             actions.push(ActionType::Wifi(WifiAction::Connect));
         }
-    } else if !args.no_wifi
-        && is_command_installed("iwctl")
-        && is_iwd_connected(&args.wifi_interface, command_runner)?
-    {
-        actions.push(ActionType::Wifi(WifiAction::Disconnect));
+    } else if !args.no_wifi && is_command_installed("iwctl") {
+        if is_iwd_connected(command_runner, &args.wifi_interface)? {
+            actions.push(ActionType::Wifi(WifiAction::Disconnect));
+        } else {
+            actions.push(ActionType::Wifi(WifiAction::Connect));
+        }
     }
 
     if !args.no_wifi && is_command_installed("rfkill") {

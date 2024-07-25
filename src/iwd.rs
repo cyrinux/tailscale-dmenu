@@ -143,14 +143,12 @@ pub fn disconnect_iwd_wifi(
 }
 
 pub fn is_iwd_connected(
-    interface: &str,
     command_runner: &dyn CommandRunner,
+    interface: &str,
 ) -> Result<bool, Box<dyn Error>> {
     let output = command_runner.run_command("iwctl", &["station", interface, "show"])?;
-
     if output.status.success() {
-        let reader = read_output_lines(&output)?;
-        for line in reader {
+        for line in read_output_lines(&output)? {
             if line.contains("Connected") {
                 return Ok(true);
             }
