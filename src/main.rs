@@ -380,6 +380,26 @@ fn handle_system_action(action: &SystemAction) -> Result<bool, Box<dyn Error>> {
     }
 }
 
+fn parse_wifi_action(action: &str) -> Result<(&str, &str), Box<dyn Error>> {
+    let emoji_pos = action
+        .char_indices()
+        .find(|(_, c)| *c == '✅' || *c == '📶')
+        .map(|(i, _)| i)
+        .ok_or("Emoji not found in action")?;
+    let tab_pos = action[emoji_pos..]
+        .char_indices()
+        .find(|(_, c)| *c == '\t')
+        .map(|(i, _)| i + emoji_pos)
+        .ok_or("Tab character not found in action")?;
+    let ssid = action[emoji_pos + 4..tab_pos].trim();
+    let parts: Vec<&str> = action[tab_pos + 1..].split('\t').collect();
+    if parts.len() < 2 {
+        return Err("Action format is incorrect".into());
+    }
+    let security = parts[0].trim();
+    Ok((ssid, security))
+}
+
 fn handle_wifi_action(
     action: &WifiAction,
     wifi_interface: &str,

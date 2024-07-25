@@ -2,7 +2,7 @@ use regex::Regex;
 
 use crate::command::{read_output_lines, CommandRunner};
 use crate::utils::{convert_network_strength, prompt_for_password};
-use crate::{notify_connection, WifiAction};
+use crate::{notify_connection, parse_wifi_action, WifiAction};
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 
@@ -83,31 +83,7 @@ pub fn connect_to_nm_wifi(
     action: &str,
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
-    // Find the position of the first emoji character (either ✅ or 📶)
-    let emoji_pos = action
-        .char_indices()
-        .find(|(_, c)| *c == '✅' || *c == '📶')
-        .map(|(i, _)| i)
-        .ok_or("Emoji not found in action")?;
-
-    // Find the position of the first tab character after the emoji
-    let tab_pos = action[emoji_pos..]
-        .char_indices()
-        .find(|(_, c)| *c == '\t')
-        .map(|(i, _)| i + emoji_pos)
-        .ok_or("Tab character not found in action")?;
-
-    // Extract the SSID between the emoji and the tab
-    let ssid = action[emoji_pos + 4..tab_pos].trim(); // 4 bytes for the emoji
-
-    // Split the rest of the action to extract security information
-    let parts: Vec<&str> = action[tab_pos + 1..].split('\t').collect();
-    if parts.len() < 2 {
-        return Err("Action format is incorrect".into());
-    }
-
-    let security = parts[0].trim();
-
+    let (ssid, security) = parse_wifi_action(action)?;
     #[cfg(debug_assertions)]
     println!("Connecting to Wi-Fi network: {ssid} with security {security}");
 

@@ -1,6 +1,6 @@
 use crate::command::{read_output_lines, CommandRunner};
 use crate::utils::{convert_network_strength, prompt_for_password};
-use crate::{notify_connection, WifiAction};
+use crate::{notify_connection, parse_wifi_action, WifiAction};
 use regex::Regex;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
@@ -83,14 +83,9 @@ pub fn connect_to_iwd_wifi(
     action: &str,
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
-    let parts: Vec<&str> = action.split('\t').collect();
-
-    if parts.len() < 3 {
-        return Err("Action format is incorrect".into());
-    }
-
-    let ssid = parts[0][parts[0].find(char::is_whitespace).unwrap_or(0)..].trim();
-    let security = parts[1].trim();
+    let (ssid, security) = parse_wifi_action(action)?;
+    #[cfg(debug_assertions)]
+    println!("Connecting to Wi-Fi network: {ssid} with security {security}");
 
     if is_known_network(ssid, command_runner)? || security.is_empty() {
         attempt_connection(interface, ssid, None, command_runner)
@@ -113,7 +108,6 @@ fn attempt_connection(
         command_args.push(pwd);
     }
 
-    println!("{:?}", command_args);
     let status = command_runner.run_command("iwctl", &command_args)?.status;
 
     if status.success() {
