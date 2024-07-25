@@ -6,6 +6,8 @@ use reqwest::blocking::get;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
+use std::thread::sleep;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub enum TailscaleAction {
@@ -52,11 +54,38 @@ pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
 }
 
 pub fn check_mullvad() -> Result<(), Box<dyn Error>> {
-    let response = get("https://am.i.mullvad.net/connected")?.text()?;
+    let mut attempts = 0;
+    let max_attempts = 3;
+    let mut response_text = String::new();
+
+    while attempts < max_attempts {
+        match get("https://am.i.mullvad.net/connected") {
+            Ok(response) => match response.text() {
+                Ok(text) => {
+                    response_text = text.trim().to_string();
+                    break;
+                }
+                Err(_) => {
+                    attempts += 1;
+                    sleep(Duration::from_secs(1)); // Adding delay between retries
+                }
+            },
+            Err(_) => {
+                attempts += 1;
+                sleep(Duration::from_secs(1)); // Adding delay between retries
+            }
+        }
+    }
+
+    if response_text.is_empty() {
+        return Err("Failed to get response after 3 attempts".into());
+    }
+
     Notification::new()
         .summary("Connected Status")
-        .body(response.trim())
+        .body(&response_text)
         .show()?;
+
     Ok(())
 }
 
