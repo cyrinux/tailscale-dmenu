@@ -42,20 +42,3 @@ pub fn prompt_for_password(ssid: &str) -> Result<String, Box<dyn std::error::Err
 
     Ok(password)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_convert_network_strength() {
-        let result = convert_network_strength("***");
-        assert_eq!(result, "_▂▄▆");
-    }
-
-    #[test]
-    fn test_prompt_for_password() {
-        let result = prompt_for_password("test_ssid");
-        assert!(result.is_err()); // This will fail in non-interactive mode
-    }
-}

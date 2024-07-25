@@ -1,8 +1,7 @@
-use regex::Regex;
-
 use crate::command::{read_output_lines, CommandRunner};
 use crate::utils::{convert_network_strength, prompt_for_password};
 use crate::{notify_connection, parse_wifi_action, WifiAction};
+use regex::Regex;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 

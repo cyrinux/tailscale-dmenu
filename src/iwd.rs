@@ -84,6 +84,7 @@ pub fn connect_to_iwd_wifi(
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
     let (ssid, security) = parse_wifi_action(action)?;
+
     #[cfg(debug_assertions)]
     println!("Connecting to Wi-Fi network: {ssid} with security {security}");
 
