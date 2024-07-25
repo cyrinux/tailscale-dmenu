@@ -1,6 +1,6 @@
 [package]
 name = "network-dmenu"
-version = "1.6.1"
+version = "1.6.2"
 edition = "2021"
 authors = ["Cyril Levis"]
 categories = ["gui"]
@@ -17,7 +17,7 @@ serde = { version = "1", default-features = false }
 serde_json = "1"
 toml = { version = "~0.8", features = ["parse"], default-features = false }
 regex = { version = "~1.10", default-features = false }
-reqwest = { version = "~0.12", features = ["blocking", "default-tls", "charset"], default-features = false }
+reqwest = { version = "~0.12", features = ["blocking", "default-tls", "charset", "json"], default-features = false }
 notify-rust = { version = "4", features = ["default"], default-features = false }
 which = { version = "~6.0" }
 clap = { version = "4", features = [
