@@ -58,13 +58,12 @@ fn parse_iwd_networks(
 
     networks.into_iter().for_each(|network| {
         let line = ansi_escape.replace_all(&network, "").to_string();
-        let parts: Vec<&str> = line.split_whitespace().collect();
+        let mut parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 3 {
-            // using network is on purpose, parts has color stripped, which includes "connected" icon
-            let connected = network.split_whitespace().count() > 3;
-            let ssid = parts[0].trim();
-            let security = parts[1].trim();
-            let signal = parts[2].trim();
+            let connected = network.starts_with("\u{1b}[0m");
+            let signal = parts.pop().unwrap().trim();
+            let security = parts.pop().unwrap().trim();
+            let ssid = line[..line.find(security).unwrap()].trim();
             let display = format!(
                 "{} {:<25}\t{:<11}\t{}",
                 if connected { "✅" } else { "📶" },
@@ -90,13 +89,7 @@ pub fn connect_to_iwd_wifi(
         return Err("Action format is incorrect".into());
     }
 
-    let ssid_part = parts[0].split_whitespace().collect::<Vec<&str>>();
-    let ssid = if ssid_part.len() > 1 {
-        ssid_part[1]
-    } else {
-        return Err("SSID not found in action".into());
-    };
-
+    let ssid = parts[0][parts[0].find(char::is_whitespace).unwrap_or(0)..].trim();
     let security = parts[1].trim();
 
     if is_known_network(ssid, command_runner)? || security.is_empty() {
@@ -120,6 +113,7 @@ fn attempt_connection(
         command_args.push(pwd);
     }
 
+    println!("{:?}", command_args);
     let status = command_runner.run_command("iwctl", &command_args)?.status;
 
     if status.success() {
