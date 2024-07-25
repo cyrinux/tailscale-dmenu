@@ -19,10 +19,7 @@ pub fn get_paired_bluetooth_devices(
         let devices = parse_bluetooth_devices(&output, &connected_devices)?;
         Ok(devices)
     } else {
-        Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Failed to fetch paired Bluetooth devices",
-        )))
+        Err("Failed to fetch paired Bluetooth devices".into())
     }
 }
 
