@@ -29,3 +29,6 @@ clap = { version = "4", features = [
   "std",
 ], default-features = false }
 ipaddress = "~0.1"
+reqwest-middleware = "*"
+reqwest-retry = "*"
+tokio = { version = "1", features = ["full"] }

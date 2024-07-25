@@ -98,7 +98,8 @@ cmd = "notify-send 'hello' 'world'"
 "#
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     create_default_config_if_missing()?;
@@ -243,7 +244,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             selected_action,
             &connected_devices,
             &command_runner,
-        )?;
+        )
+        .await?;
     }
 
     #[cfg(debug_assertions)]
@@ -400,7 +402,7 @@ fn parse_wifi_action(action: &str) -> Result<(&str, &str), Box<dyn Error>> {
     Ok((ssid, security))
 }
 
-fn handle_wifi_action(
+async fn handle_wifi_action(
     action: &WifiAction,
     wifi_interface: &str,
     command_runner: &dyn CommandRunner,
@@ -420,7 +422,7 @@ fn handle_wifi_action(
                 .arg("connect")
                 .arg(wifi_interface)
                 .status()?;
-            check_mullvad()?;
+            check_mullvad().await?;
             Ok(status.success())
         }
         WifiAction::Network(network) => {
@@ -429,13 +431,13 @@ fn handle_wifi_action(
             } else if is_command_installed("iwctl") {
                 connect_to_iwd_wifi(wifi_interface, network, command_runner)?;
             }
-            check_mullvad()?;
+            check_mullvad().await?;
             Ok(true)
         }
     }
 }
 
-fn set_action(
+async fn set_action(
     wifi_interface: &str,
     action: ActionType,
     connected_devices: &[String],
@@ -445,10 +447,10 @@ fn set_action(
         ActionType::Custom(custom_action) => handle_custom_action(&custom_action),
         ActionType::System(system_action) => handle_system_action(&system_action),
         ActionType::Tailscale(mullvad_action) => {
-            handle_tailscale_action(&mullvad_action, command_runner)
+            handle_tailscale_action(&mullvad_action, command_runner).await
         }
         ActionType::Wifi(wifi_action) => {
-            handle_wifi_action(&wifi_action, wifi_interface, command_runner)
+            handle_wifi_action(&wifi_action, wifi_interface, command_runner).await
         }
         ActionType::Bluetooth(bluetooth_action) => {
             handle_bluetooth_action(&bluetooth_action, connected_devices, command_runner)

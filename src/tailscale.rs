@@ -2,12 +2,12 @@ use crate::command::{execute_command, is_command_installed, read_output_lines, C
 use crate::format_entry;
 use notify_rust::Notification;
 use regex::Regex;
-use reqwest::blocking::get;
+use reqwest::Client;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
-use std::thread::sleep;
-use std::time::Duration;
 
 #[derive(Debug)]
 pub enum TailscaleAction {
@@ -53,37 +53,26 @@ pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
     }
 }
 
-pub fn check_mullvad() -> Result<(), Box<dyn Error>> {
-    let mut attempts = 0;
-    let max_attempts = 3;
-    let mut response_text = String::new();
+pub async fn check_mullvad() -> Result<(), Box<dyn Error>> {
+    // Create a retry policy with exponential backoff
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
 
-    while attempts < max_attempts {
-        match get("https://am.i.mullvad.net/connected") {
-            Ok(response) => match response.text() {
-                Ok(text) => {
-                    response_text = text.trim().to_string();
-                    break;
-                }
-                Err(_) => {
-                    attempts += 1;
-                    sleep(Duration::from_secs(1)); // Adding delay between retries
-                }
-            },
-            Err(_) => {
-                attempts += 1;
-                sleep(Duration::from_secs(1)); // Adding delay between retries
-            }
-        }
-    }
+    // Build a client with retry middleware
+    let client: ClientWithMiddleware = ClientBuilder::new(Client::new())
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build();
 
-    if response_text.is_empty() {
-        return Err("Failed to get response after 3 attempts".into());
-    }
+    // Make a request and handle retries automatically
+    let response = client
+        .get("https://am.i.mullvad.net/connected")
+        .send()
+        .await?
+        .text()
+        .await?;
 
     Notification::new()
         .summary("Connected Status")
-        .body(&response_text)
+        .body(response.trim())
         .show()?;
 
     Ok(())
@@ -243,7 +232,7 @@ pub fn is_exit_node_active(command_runner: &dyn CommandRunner) -> Result<bool, B
     Ok(false)
 }
 
-pub fn handle_tailscale_action(
+pub async fn handle_tailscale_action(
     action: &TailscaleAction,
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
@@ -256,7 +245,7 @@ pub fn handle_tailscale_action(
             let status = command_runner
                 .run_command("tailscale", &["set", "--exit-node="])?
                 .status;
-            check_mullvad()?;
+            check_mullvad().await?;
             Ok(status.success())
         }
         TailscaleAction::SetEnable(enable) => {
@@ -267,10 +256,10 @@ pub fn handle_tailscale_action(
         }
         TailscaleAction::SetExitNode(node) => {
             if set_exit_node(node) {
-                check_mullvad()?;
+                check_mullvad().await?;
                 Ok(true)
             } else {
-                check_mullvad()?;
+                check_mullvad().await?;
                 Ok(false)
             }
         }
