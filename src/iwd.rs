@@ -60,7 +60,8 @@ fn parse_iwd_networks(
         let line = ansi_escape.replace_all(&network, "").to_string();
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 3 {
-            let connected = parts.len() > 3;
+            // using network is on purpose, parts has color stripped, which includes "connected" icon
+            let connected = network.split_whitespace().count() > 3;
             let ssid = parts[0].trim();
             let security = parts[1].trim();
             let signal = parts[2].trim();
