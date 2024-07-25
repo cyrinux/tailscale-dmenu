@@ -270,3 +270,45 @@ pub fn is_tailscale_enabled(command_runner: &dyn CommandRunner) -> Result<bool, 
     }
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::MockCommandRunner;
+    use std::collections::HashMap;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::Output;
+
+    struct MockCommandRunner {
+        outputs: HashMap<String, Output>,
+    }
+
+    impl CommandRunner for MockCommandRunner {
+        fn run_command(&self, command: &str, args: &[&str]) -> Result<Output, std::io::Error> {
+            let key = format!("{} {:?}", command, args);
+            self.outputs.get(&key).cloned().ok_or(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Command not found",
+            ))
+        }
+    }
+
+    #[test]
+    fn test_is_tailscale_enabled() {
+        let command_runner = MockCommandRunner {
+            outputs: HashMap::new(),
+        };
+        command_runner.outputs.insert(
+            "tailscale [\"status\"]".to_string(),
+            Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: b"Tailscale is stopped".to_vec(),
+                stderr: Vec::new(),
+            },
+        );
+
+        let result = is_tailscale_enabled(&command_runner);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+}

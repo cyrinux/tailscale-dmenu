@@ -39,19 +39,31 @@ fn parse_bluetooth_devices(
 }
 
 fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<BluetoothAction> {
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.len() >= 2 {
-        let address = parts[1].to_string();
-        let name = parts[2..].join(" ");
-        let is_active = connected_devices.contains(&address);
-        Some(BluetoothAction::ToggleConnect(format_entry(
-            "bluetooth",
-            if is_active { "✅" } else { " " },
-            &format!("{name:<25} - {address}"),
-        )))
-    } else {
-        None
-    }
+    // Define a regex pattern for matching MAC addresses and device names
+    // Check if the line matches the pattern and extract captures
+    Regex::new(r"([0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5})\s+(.*)")
+        .ok()?
+        .captures(&line)
+        .and_then(|caps| {
+            // Extract the MAC address and device name from the captures
+            let address = caps.get(1).map(|m| m.as_str().to_string());
+            let name = caps.get(3).map(|m| m.as_str().to_string());
+
+            // Check if we successfully extracted both the address and the name
+            address.and_then(|addr| {
+                name.map(|nm| {
+                    // Check if the device is active
+                    let is_active = connected_devices.contains(&addr);
+
+                    // Return the appropriate BluetoothAction
+                    BluetoothAction::ToggleConnect(format_entry(
+                        "bluetooth",
+                        if is_active { "✅" } else { " " },
+                        &format!("{nm:<25} - {addr}"),
+                    ))
+                })
+            })
+        })
 }
 
 pub fn handle_bluetooth_action(
@@ -74,6 +86,8 @@ fn connect_to_bluetooth_device(
     if let Some(address) = extract_device_address(device) {
         let is_active = connected_devices.contains(&address);
         let action = if is_active { "disconnect" } else { "connect" };
+        #[cfg(debug_assertions)]
+        println!("Connect to Bluetooth device: {address}");
         let status = command_runner
             .run_command("bluetoothctl", &[action, &address])?
             .status;
@@ -91,8 +105,9 @@ fn connect_to_bluetooth_device(
 }
 
 fn extract_device_address(device: &str) -> Option<String> {
-    let re = Regex::new(r" ([\w:]+)$").ok()?;
-    re.captures(device)
+    Regex::new(r"([0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5})$")
+        .ok()?
+        .captures(device)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
 }
@@ -101,8 +116,7 @@ pub fn get_connected_devices(
     command_runner: &dyn CommandRunner,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let output = command_runner.run_command("bluetoothctl", &["info"])?;
-    let reader = read_output_lines(&output)?;
-    let mac_addresses = reader
+    let mac_addresses = read_output_lines(&output)?
         .into_iter()
         .filter(|line| line.starts_with("Device "))
         .filter_map(|line| line.split_whitespace().nth(1).map(|s| s.to_string()))

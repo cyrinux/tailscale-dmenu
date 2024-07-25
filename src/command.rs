@@ -19,8 +19,9 @@ pub fn is_command_installed(cmd: &str) -> bool {
 }
 
 pub fn read_output_lines(output: &Output) -> Result<Vec<String>, Box<dyn Error>> {
-    let reader = BufReader::new(output.stdout.as_slice());
-    Ok(reader.lines().collect::<Result<Vec<String>, _>>()?)
+    Ok(BufReader::new(output.stdout.as_slice())
+        .lines()
+        .collect::<Result<Vec<String>, _>>()?)
 }
 
 pub fn execute_command(command: &str, args: &[&str]) -> bool {
