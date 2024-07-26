@@ -5,6 +5,7 @@ use regex::Regex;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 
+/// Retrieves available Wi-Fi networks using IWD.
 pub fn get_iwd_networks(
     interface: &str,
     command_runner: &dyn CommandRunner,
@@ -31,6 +32,7 @@ pub fn get_iwd_networks(
     Ok(actions)
 }
 
+/// Fetches raw Wi-Fi network data from IWD.
 fn fetch_iwd_networks(
     interface: &str,
     command_runner: &dyn CommandRunner,
@@ -50,6 +52,7 @@ fn fetch_iwd_networks(
     }
 }
 
+/// Parses the raw Wi-Fi network data into a structured format.
 fn parse_iwd_networks(
     actions: &mut Vec<WifiAction>,
     networks: Vec<String>,
@@ -78,6 +81,7 @@ fn parse_iwd_networks(
     Ok(())
 }
 
+/// Connects to a Wi-Fi network using IWD.
 pub fn connect_to_iwd_wifi(
     interface: &str,
     action: &str,
@@ -96,6 +100,7 @@ pub fn connect_to_iwd_wifi(
     }
 }
 
+/// Attempts to connect to a Wi-Fi network, optionally using a password.
 fn attempt_connection(
     interface: &str,
     ssid: &str,
@@ -121,6 +126,7 @@ fn attempt_connection(
     }
 }
 
+/// Disconnects from a Wi-Fi network.
 pub fn disconnect_iwd_wifi(
     interface: &str,
     command_runner: &dyn CommandRunner,
@@ -131,6 +137,7 @@ pub fn disconnect_iwd_wifi(
     Ok(status.success())
 }
 
+/// Checks if IWD is currently connected to a network.
 pub fn is_iwd_connected(
     command_runner: &dyn CommandRunner,
     interface: &str,
@@ -146,6 +153,7 @@ pub fn is_iwd_connected(
     Ok(false)
 }
 
+/// Checks if a Wi-Fi network is known (i.e., previously connected).
 pub fn is_known_network(
     ssid: &str,
     command_runner: &dyn CommandRunner,

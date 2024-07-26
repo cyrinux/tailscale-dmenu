@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 
+/// Enum representing various Tailscale actions.
 #[derive(Debug)]
 pub enum TailscaleAction {
     DisableExitNode,
@@ -17,6 +18,7 @@ pub enum TailscaleAction {
     SetShields(bool),
 }
 
+/// Retrieves a list of Mullvad actions available for Tailscale.
 pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
     let output = command_runner
         .run_command("tailscale", &["exit-node", "list"])
@@ -53,6 +55,7 @@ pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
     }
 }
 
+/// Checks Mullvad connection status and sends a notification.
 pub async fn check_mullvad() -> Result<(), Box<dyn Error>> {
     // Create a retry policy with exponential backoff
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
@@ -78,6 +81,7 @@ pub async fn check_mullvad() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Parses a Mullvad line from the Tailscale exit-node list output.
 fn parse_mullvad_line(line: &str, regex: &Regex, active_exit_node: &str) -> String {
     let parts: Vec<&str> = regex.split(line).collect();
     let node_ip = parts.first().unwrap_or(&"").trim();
@@ -91,10 +95,12 @@ fn parse_mullvad_line(line: &str, regex: &Regex, active_exit_node: &str) -> Stri
     )
 }
 
+/// Extracts the short name from a node name.
 fn extract_short_name(node_name: &str) -> &str {
     node_name.split('.').next().unwrap_or(node_name)
 }
 
+/// Parses an exit node line from the Tailscale exit-node list output.
 fn parse_exit_node_line(line: &str, regex: &Regex, active_exit_node: &str) -> String {
     let parts: Vec<&str> = regex.split(line).collect();
     let node_ip = parts.first().unwrap_or(&"").trim();
@@ -108,6 +114,7 @@ fn parse_exit_node_line(line: &str, regex: &Regex, active_exit_node: &str) -> St
     )
 }
 
+/// Retrieves the currently active exit node for Tailscale.
 fn get_active_exit_node(command_runner: &dyn CommandRunner) -> String {
     let output = command_runner
         .run_command("tailscale", &["status", "--json"])
@@ -132,6 +139,7 @@ fn get_active_exit_node(command_runner: &dyn CommandRunner) -> String {
     String::new()
 }
 
+/// Sets the exit node for Tailscale.
 fn set_exit_node(action: &str) -> bool {
     let Some(node_ip) = extract_node_ip(action) else {
         return false;
@@ -155,6 +163,7 @@ fn set_exit_node(action: &str) -> bool {
     )
 }
 
+/// Extracts the IP address from the action string.
 fn extract_node_ip(action: &str) -> Option<&str> {
     Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
         .ok()?
@@ -163,6 +172,7 @@ fn extract_node_ip(action: &str) -> Option<&str> {
         .map(|m| m.as_str())
 }
 
+/// Returns the flag emoji for a given country.
 fn get_flag(country: &str) -> &'static str {
     let country_flags: HashMap<&str, &str> = [
         ("Albania", "🇦🇱"),
@@ -218,6 +228,7 @@ fn get_flag(country: &str) -> &'static str {
     country_flags.get(country).unwrap_or(&"❓")
 }
 
+/// Checks if an exit node is currently active for Tailscale.
 pub fn is_exit_node_active(command_runner: &dyn CommandRunner) -> Result<bool, Box<dyn Error>> {
     let output = command_runner.run_command("tailscale", &["status"])?;
 
@@ -232,6 +243,7 @@ pub fn is_exit_node_active(command_runner: &dyn CommandRunner) -> Result<bool, B
     Ok(false)
 }
 
+/// Handles a Tailscale action.
 pub async fn handle_tailscale_action(
     action: &TailscaleAction,
     command_runner: &dyn CommandRunner,
@@ -279,6 +291,7 @@ pub async fn handle_tailscale_action(
     }
 }
 
+/// Checks if Tailscale is currently enabled.
 pub fn is_tailscale_enabled(command_runner: &dyn CommandRunner) -> Result<bool, Box<dyn Error>> {
     let output = command_runner.run_command("tailscale", &["status"])?;
 

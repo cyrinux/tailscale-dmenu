@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+/// Converts network strength to a visual representation.
 pub fn convert_network_strength(line: &str) -> String {
     let strength_symbols = ["_", "▂", "▄", "▆", "█"];
     let stars = line.chars().rev().take_while(|&c| c == '*').count();
@@ -20,6 +21,7 @@ pub fn convert_network_strength(line: &str) -> String {
     network_strength
 }
 
+/// Prompts the user for a password using `pinentry-gnome3`.
 pub fn prompt_for_password(ssid: &str) -> Result<String, Box<dyn std::error::Error>> {
     let mut child = Command::new("pinentry-gnome3")
         .stdin(Stdio::piped())

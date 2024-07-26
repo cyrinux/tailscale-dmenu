@@ -4,11 +4,13 @@ use regex::Regex;
 use std::error::Error;
 use std::process::Output;
 
+/// Represents actions that can be performed on Bluetooth devices.
 #[derive(Debug)]
 pub enum BluetoothAction {
     ToggleConnect(String),
 }
 
+/// Retrieves a list of paired Bluetooth devices and their connection status.
 pub fn get_paired_bluetooth_devices(
     command_runner: &dyn CommandRunner,
 ) -> Result<Vec<BluetoothAction>, Box<dyn Error>> {
@@ -23,6 +25,7 @@ pub fn get_paired_bluetooth_devices(
     }
 }
 
+/// Parses the output of `bluetoothctl devices` command to retrieve a list of Bluetooth devices.
 fn parse_bluetooth_devices(
     output: &Output,
     connected_devices: &[String],
@@ -35,6 +38,7 @@ fn parse_bluetooth_devices(
     Ok(devices)
 }
 
+/// Parses a line of Bluetooth device information and returns a `BluetoothAction` if valid.
 fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<BluetoothAction> {
     // Define a regex pattern for matching MAC addresses and device names
     // Check if the line matches the pattern and extract captures
@@ -63,6 +67,7 @@ fn parse_bluetooth_device(line: String, connected_devices: &[String]) -> Option<
         })
 }
 
+/// Handles a Bluetooth action, such as connecting or disconnecting a device.
 pub fn handle_bluetooth_action(
     action: &BluetoothAction,
     connected_devices: &[String],
@@ -75,6 +80,7 @@ pub fn handle_bluetooth_action(
     }
 }
 
+/// Connects or disconnects a Bluetooth device based on its current status.
 fn connect_to_bluetooth_device(
     device: &str,
     connected_devices: &[String],
@@ -101,6 +107,7 @@ fn connect_to_bluetooth_device(
     }
 }
 
+/// Extracts the MAC address from the given device string.
 fn extract_device_address(device: &str) -> Option<String> {
     Regex::new(r"([0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5})$")
         .ok()?
@@ -109,6 +116,7 @@ fn extract_device_address(device: &str) -> Option<String> {
         .map(|m| m.as_str().to_string())
 }
 
+/// Retrieves a list of currently connected Bluetooth devices.
 pub fn get_connected_devices(
     command_runner: &dyn CommandRunner,
 ) -> Result<Vec<String>, Box<dyn Error>> {

@@ -29,6 +29,7 @@ use tailscale::{
     is_tailscale_enabled, TailscaleAction,
 };
 
+/// Command-line arguments structure for the application.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -42,6 +43,7 @@ struct Args {
     no_tailscale: bool,
 }
 
+/// Configuration structure for the application.
 #[derive(Debug, Deserialize, Serialize)]
 struct Config {
     #[serde(default)]
@@ -50,12 +52,14 @@ struct Config {
     dmenu_args: String,
 }
 
+/// Custom action structure for user-defined actions.
 #[derive(Debug, Deserialize, Serialize)]
 struct CustomAction {
     display: String,
     cmd: String,
 }
 
+/// Enum representing different types of actions that can be performed.
 #[derive(Debug)]
 enum ActionType {
     Bluetooth(BluetoothAction),
@@ -65,6 +69,7 @@ enum ActionType {
     Wifi(WifiAction),
 }
 
+/// Enum representing system-related actions.
 #[derive(Debug)]
 enum SystemAction {
     EditConnections,
@@ -72,6 +77,7 @@ enum SystemAction {
     RfkillUnblock,
 }
 
+/// Enum representing Wi-Fi-related actions.
 #[derive(Debug)]
 enum WifiAction {
     Connect,
@@ -79,6 +85,7 @@ enum WifiAction {
     Network(String),
 }
 
+/// Formats an entry for display in the menu.
 pub fn format_entry(action: &str, icon: &str, text: &str) -> String {
     if icon.is_empty() {
         format!("{action:<10}- {text}")
@@ -87,6 +94,7 @@ pub fn format_entry(action: &str, icon: &str, text: &str) -> String {
     }
 }
 
+/// Returns the default configuration as a string.
 fn get_default_config() -> &'static str {
     r#"
 dmenu_cmd = "dmenu"
@@ -98,6 +106,7 @@ cmd = "notify-send 'hello' 'world'"
 "#
 }
 
+/// Main function for the application.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
@@ -256,11 +265,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Gets the configuration file path.
 fn get_config_path() -> Result<PathBuf, Box<dyn Error>> {
     let config_dir = config_dir().ok_or("Failed to find config directory")?;
     Ok(config_dir.join("network-dmenu").join("config.toml"))
 }
 
+/// Creates a default configuration file if it doesn't exist.
 fn create_default_config_if_missing() -> Result<(), Box<dyn Error>> {
     let config_path = get_config_path()?;
 
@@ -274,6 +285,7 @@ fn create_default_config_if_missing() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Reads and returns the configuration.
 fn get_config() -> Result<Config, Box<dyn Error>> {
     let config_path = get_config_path()?;
     let config_content = fs::read_to_string(config_path)?;
@@ -281,6 +293,7 @@ fn get_config() -> Result<Config, Box<dyn Error>> {
     Ok(config)
 }
 
+/// Retrieves the list of actions based on the command-line arguments and configuration.
 fn get_actions(
     args: &Args,
     command_runner: &dyn CommandRunner,
@@ -360,11 +373,13 @@ fn get_actions(
     Ok(actions)
 }
 
+/// Handles a custom action by executing its command.
 fn handle_custom_action(action: &CustomAction) -> Result<bool, Box<dyn Error>> {
     let status = Command::new("sh").arg("-c").arg(&action.cmd).status()?;
     Ok(status.success())
 }
 
+/// Handles a system action.
 fn handle_system_action(action: &SystemAction) -> Result<bool, Box<dyn Error>> {
     match action {
         SystemAction::RfkillBlock => {
@@ -382,6 +397,7 @@ fn handle_system_action(action: &SystemAction) -> Result<bool, Box<dyn Error>> {
     }
 }
 
+/// Parses a Wi-Fi action string to extract the SSID and security type.
 fn parse_wifi_action(action: &str) -> Result<(&str, &str), Box<dyn Error>> {
     let emoji_pos = action
         .char_indices()
@@ -402,6 +418,7 @@ fn parse_wifi_action(action: &str) -> Result<(&str, &str), Box<dyn Error>> {
     Ok((ssid, security))
 }
 
+/// Handles a Wi-Fi action, such as connecting or disconnecting.
 async fn handle_wifi_action(
     action: &WifiAction,
     wifi_interface: &str,
@@ -437,6 +454,7 @@ async fn handle_wifi_action(
     }
 }
 
+/// Sets and handles the selected action.
 async fn set_action(
     wifi_interface: &str,
     action: ActionType,
@@ -458,6 +476,7 @@ async fn set_action(
     }
 }
 
+/// Sends a notification about the Wi-Fi connection.
 fn notify_connection(ssid: &str) -> Result<(), Box<dyn Error>> {
     Notification::new()
         .summary("Wi-Fi")

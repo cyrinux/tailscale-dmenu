@@ -5,6 +5,7 @@ use regex::Regex;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 
+/// Retrieves available Wi-Fi networks using NetworkManager.
 pub fn get_nm_wifi_networks(
     command_runner: &dyn CommandRunner,
 ) -> Result<Vec<WifiAction>, Box<dyn Error>> {
@@ -32,6 +33,7 @@ pub fn get_nm_wifi_networks(
     Ok(actions)
 }
 
+/// Fetches raw Wi-Fi network data from NetworkManager.
 fn fetch_wifi_lines(
     command_runner: &dyn CommandRunner,
 ) -> Result<Option<Vec<String>>, Box<dyn Error>> {
@@ -56,6 +58,7 @@ fn fetch_wifi_lines(
     }
 }
 
+/// Parses the raw Wi-Fi network data into a structured format.
 fn parse_wifi_lines(actions: &mut Vec<WifiAction>, wifi_lines: Vec<String>) {
     wifi_lines.into_iter().for_each(|line| {
         let parts: Vec<&str> = line.split(':').collect();
@@ -78,6 +81,7 @@ fn parse_wifi_lines(actions: &mut Vec<WifiAction>, wifi_lines: Vec<String>) {
     });
 }
 
+/// Connects to a Wi-Fi network using NetworkManager.
 pub fn connect_to_nm_wifi(
     action: &str,
     command_runner: &dyn CommandRunner,
@@ -94,6 +98,7 @@ pub fn connect_to_nm_wifi(
     }
 }
 
+/// Attempts to connect to a Wi-Fi network, optionally using a password.
 fn attempt_connection(
     ssid: &str,
     password: Option<String>,
@@ -116,6 +121,7 @@ fn attempt_connection(
     }
 }
 
+/// Disconnects from a Wi-Fi network.
 pub fn disconnect_nm_wifi(
     interface: &str,
     command_runner: &dyn CommandRunner,
@@ -126,6 +132,7 @@ pub fn disconnect_nm_wifi(
     Ok(status.success())
 }
 
+/// Checks if NetworkManager is currently connected to a network.
 pub fn is_nm_connected(
     command_runner: &dyn CommandRunner,
     interface: &str,
@@ -152,6 +159,7 @@ pub fn is_nm_connected(
     Ok(false)
 }
 
+/// Checks if a Wi-Fi network is known (i.e., previously connected).
 pub fn is_known_network(
     ssid: &str,
     command_runner: &dyn CommandRunner,
