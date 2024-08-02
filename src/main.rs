@@ -55,7 +55,7 @@ struct Config {
 }
 
 /// Custom action structure for user-defined actions.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct CustomAction {
     display: String,
     cmd: String,
@@ -117,13 +117,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     create_default_config_if_missing()?;
 
-    let config = get_config()?;
+    let config = get_config()?; // Load the configuration once
 
     check_required_commands(&config)?;
 
     let command_runner = RealCommandRunner;
-    let config_actions = get_config()?;
-    let actions = get_actions(&args, config_actions, &command_runner)?;
+    let actions = get_actions(&args, &config, &command_runner)?; // Use the loaded config
     let action = select_action_from_menu(&config, &actions)?;
 
     if !action.is_empty() {
@@ -310,11 +309,12 @@ fn get_config() -> Result<Config, Box<dyn Error>> {
 /// Retrieves the list of actions based on the command-line arguments and configuration.
 fn get_actions(
     args: &Args,
-    config: Config,
+    config: &Config, // Change to reference
     command_runner: &dyn CommandRunner,
 ) -> Result<Vec<ActionType>, Box<dyn Error>> {
     let mut actions = config
         .actions
+        .clone() // Clone the actions vector
         .into_iter()
         .map(ActionType::Custom)
         .collect::<Vec<_>>();
