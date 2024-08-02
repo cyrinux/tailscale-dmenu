@@ -6,7 +6,7 @@ use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 
 /// Enum representing various Tailscale actions.
@@ -18,13 +18,18 @@ pub enum TailscaleAction {
     SetShields(bool),
 }
 
-/// Retrieves a list of Mullvad actions available for Tailscale.
-pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
+/// Add a new parameter to pass the excluded exit nodes.
+pub fn get_mullvad_actions(
+    command_runner: &dyn CommandRunner,
+    exclude_exit_nodes: &[String],
+) -> Vec<String> {
     let output = command_runner
         .run_command("tailscale", &["exit-node", "list"])
         .expect("Failed to execute command");
 
     let active_exit_node = get_active_exit_node(command_runner);
+
+    let exclude_set: HashSet<_> = exclude_exit_nodes.iter().collect();
 
     if output.status.success() {
         let reader = read_output_lines(&output).unwrap_or_default();
@@ -33,6 +38,7 @@ pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
         let mut actions: Vec<String> = reader
             .into_iter()
             .filter(|line| line.contains("mullvad.ts.net"))
+            .filter(|line| !exclude_set.contains(&extract_node_name(line)))
             .map(|line| parse_mullvad_line(&line, &regex, &active_exit_node))
             .collect();
 
@@ -41,6 +47,7 @@ pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
             reader
                 .into_iter()
                 .filter(|line| line.contains("ts.net") && !line.contains("mullvad.ts.net"))
+                .filter(|line| !exclude_set.contains(&extract_node_name(line)))
                 .map(|line| parse_exit_node_line(&line, &regex, &active_exit_node)),
         );
 
@@ -53,6 +60,12 @@ pub fn get_mullvad_actions(command_runner: &dyn CommandRunner) -> Vec<String> {
     } else {
         Vec::new()
     }
+}
+
+/// Helper function to extract node name from the action line.
+fn extract_node_name(line: &str) -> String {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    parts.get(1).unwrap_or(&"").to_string()
 }
 
 /// Checks Mullvad connection status and sends a notification.

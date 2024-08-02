@@ -48,6 +48,8 @@ struct Args {
 struct Config {
     #[serde(default)]
     actions: Vec<CustomAction>,
+    #[serde(default)]
+    exclude_exit_node: Vec<String>,
     dmenu_cmd: String,
     dmenu_args: String,
 }
@@ -100,6 +102,8 @@ fn get_default_config() -> &'static str {
 dmenu_cmd = "dmenu"
 dmenu_args = "--no-multi"
 
+exclude_exit_node = ["exit1", "exit2"]
+
 [[actions]]
 display = "🛡️ Example"
 cmd = "notify-send 'hello' 'world'"
@@ -118,7 +122,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     check_required_commands(&config)?;
 
     let command_runner = RealCommandRunner;
-    let actions = get_actions(&args, &command_runner)?;
+    let config_actions = get_config()?;
+    let actions = get_actions(&args, config_actions, &command_runner)?;
     let action = select_action_from_menu(&config, &actions)?;
 
     if !action.is_empty() {
@@ -305,9 +310,9 @@ fn get_config() -> Result<Config, Box<dyn Error>> {
 /// Retrieves the list of actions based on the command-line arguments and configuration.
 fn get_actions(
     args: &Args,
+    config: Config,
     command_runner: &dyn CommandRunner,
 ) -> Result<Vec<ActionType>, Box<dyn Error>> {
-    let config = get_config()?;
     let mut actions = config
         .actions
         .into_iter()
@@ -367,7 +372,7 @@ fn get_actions(
         actions.push(ActionType::Tailscale(TailscaleAction::SetShields(false)));
         actions.push(ActionType::Tailscale(TailscaleAction::SetShields(true)));
         actions.extend(
-            get_mullvad_actions(command_runner)
+            get_mullvad_actions(command_runner, &config.exclude_exit_node)
                 .into_iter()
                 .map(|m| ActionType::Tailscale(TailscaleAction::SetExitNode(m))),
         );
