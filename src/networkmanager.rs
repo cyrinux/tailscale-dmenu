@@ -255,6 +255,7 @@ pub fn disconnect_nm_vpn(
     name: &str,
     command_runner: &dyn CommandRunner,
 ) -> Result<bool, Box<dyn Error>> {
+    let name = parse_vpn_action(name)?;
     let status = command_runner
         .run_command("nmcli", &["connection", "down", name])?
         .status;
